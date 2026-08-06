@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delivery AI | The Car Agent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">DA</div>
+        <div>
+          <h1>Delivery AI</h1>
+          <p>The Car Agent</p>
+        </div>
+      </div>
+
+      <nav id="mainNav">
+        <button class="nav-item active" data-page="command"><span>◆</span> Command Centre</button>
+        <button class="nav-item" data-page="diary"><span>◫</span> Collection Diary</button>
+        <button class="nav-item" data-page="new"><span>＋</span> New Collection</button>
+        <button class="nav-item" data-page="driver"><span>◉</span> Driver View</button>
+        <button class="nav-item" data-page="appraisals"><span>✓</span> Vehicle Appraisals</button>
+        <button class="nav-item" data-page="expenses"><span>£</span> Expenses</button>
+        <button class="nav-item" data-page="history"><span>↺</span> Collection History</button>
+        <button class="nav-item" data-page="reports"><span>▥</span> Reports</button>
+        <button class="nav-item" data-page="league"><span>★</span> Collector League</button>
+        <button class="nav-item" data-page="collectors"><span>♟</span> Collector Management</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-dot"></div>
+        <span>System ready</span>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">DELIVERY OPERATIONS</p>
+          <h2 id="pageTitle">Command Centre</h2>
+        </div>
+        <div class="topbar-actions">
+          <div class="date-chip" id="todayDate"></div>
+          <button class="primary-btn" data-go="new">+ New Collection</button>
+        </div>
+      </header>
+
+      <section class="page active" id="page-command">
+        <div class="hero-card">
+          <div>
+            <p class="eyebrow">LIVE COLLECTION PERFORMANCE</p>
+            <h3>Good evening team</h3>
+            <p>Track collections, costs, reductions and collector hours from one screen.</p>
+          </div>
+          <div class="hero-stat">
+            <span>Net saving this month</span>
+            <strong id="heroNetSaving">£0</strong>
+          </div>
+        </div>
+
+        <div class="metric-grid" id="commandMetrics"></div>
+
+        <div class="content-grid two">
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">TODAY</p>
+                <h3>Live Collections</h3>
+              </div>
+              <button class="ghost-btn" data-go="diary">View diary</button>
+            </div>
+            <div id="liveCollections" class="stack"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">PERFORMANCE</p>
+                <h3>Collector Snapshot</h3>
+              </div>
+            </div>
+            <div id="collectorSnapshot"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-diary">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">SCHEDULE</p>
+              <h3>Collection Diary</h3>
+            </div>
+            <input type="date" id="diaryDate" />
+          </div>
+          <div id="diaryList" class="stack"></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-new">
+        <form id="collectionForm" class="panel form-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">CREATE</p>
+              <h3>New Collection</h3>
+            </div>
+            <span class="badge blue">DAI-001</span>
+          </div>
+
+          <div class="form-section">
+            <h4>Collection details</h4>
+            <div class="form-grid three">
+              <label>Collection date<input required type="date" name="collectionDate"></label>
+              <label>Collection time<input type="time" name="collectionTime"></label>
+              <label>Collector<select name="collector" id="collectorSelect" required></select></label>
+              <label>Registration<input required name="registration" class="uppercase" placeholder="AB12 CDE"></label>
+              <label>Make<input name="make" placeholder="Volkswagen"></label>
+              <label>Model<input name="model" placeholder="Tiguan"></label>
+              <label>Current mileage<input type="number" min="0" name="vehicleMileage"></label>
+              <label>Seller/contact name<input name="contactName"></label>
+              <label>Contact telephone<input name="contactPhone"></label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4>Journey</h4>
+            <div class="form-grid two">
+              <label>Collection address<textarea name="collectionAddress"></textarea></label>
+              <label>Delivery destination<textarea name="destination"></textarea></label>
+              <label>Estimated distance (miles)<input type="number" min="0" step="0.1" name="estimatedDistance"></label>
+              <label>Journey notes<input name="journeyNotes"></label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4>Purchase and reduction</h4>
+            <div class="form-grid three">
+              <label>Agreed purchase price (£)<input type="number" min="0" step="0.01" name="agreedPrice"></label>
+              <label>Final collection price (£)<input type="number" min="0" step="0.01" name="finalPrice"></label>
+              <label>Expected reduction (£)<input readonly name="calculatedReduction"></label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="reset" class="secondary-btn">Clear</button>
+            <button type="submit" class="primary-btn">Create Collection</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="page" id="page-driver">
+        <div class="driver-header panel">
+          <div>
+            <p class="eyebrow">MOBILE DRIVER MODE</p>
+            <h3>Today’s Collection</h3>
+          </div>
+          <select id="driverJobSelect"></select>
+        </div>
+        <div id="driverJobCard"></div>
+      </section>
+
+      <section class="page" id="page-appraisals">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">VEHICLE CONDITION</p>
+              <h3>Vehicle Appraisals</h3>
+            </div>
+            <select id="appraisalJobSelect"></select>
+          </div>
+          <div id="appraisalWorkspace"></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-expenses">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">TRAVEL COSTS</p>
+              <h3>Collection Expenses</h3>
+            </div>
+          </div>
+          <div id="expenseList"></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-history">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">SEARCH</p>
+              <h3>Collection History</h3>
+            </div>
+            <input id="historySearch" placeholder="Search registration, collector or destination">
+          </div>
+          <div id="historyList"></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-reports">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ANALYSIS</p>
+              <h3>Reports & Month Comparison</h3>
+            </div>
+            <div class="inline-controls">
+              <input type="month" id="monthA">
+              <span>vs</span>
+              <input type="month" id="monthB">
+            </div>
+          </div>
+          <div class="metric-grid compact" id="reportMetrics"></div>
+          <div id="monthComparison"></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-league">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">TEAM PERFORMANCE</p>
+              <h3>Collector League</h3>
+            </div>
+          </div>
+          <div id="leagueTable"></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-collectors">
+        <div class="content-grid two">
+          <form id="collectorForm" class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">TEAM</p>
+                <h3>Add Collector</h3>
+              </div>
+            </div>
+            <label>Collector name<input name="name" required></label>
+            <label>Telephone<input name="phone"></label>
+            <label>Email<input type="email" name="email"></label>
+            <button class="primary-btn" type="submit">Add Collector</button>
+          </form>
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">ACTIVE</p>
+                <h3>Collectors</h3>
+              </div>
+            </div>
+            <div id="collectorList"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="script.js"></script>
+</body>
+</html>
