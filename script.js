@@ -66,8 +66,9 @@ function renderCommand(){
   const miles=month.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
   $("heroNetSaving").textContent=money(red-exp);
   $("commandMetrics").innerHTML=[
-    metric("Collections today",todayJobs.length,"Scheduled and active","blue"),
+    metric("Collections today",todayJobs.length,"Scheduled, active and no collection","blue"),
     metric("Collections this month",completed.length,"Delivered vehicles","good"),
+    metric("No Collection Trips",month.filter(j=>j.status==="No Collection").length,`${money(month.filter(j=>j.status==="No Collection").reduce((s,j)=>s+totalExpenses(j),0))} cost this month`,"warn"),
     metric("Travel costs this month",money(exp),`${completed.length?money(exp/completed.length):money(0)} average`,"warn"),
     metric("Reductions this month",money(red),`${completed.length?money(red/completed.length):money(0)} average`,"good"),
     metric("Collector hours",`${num(hrs)} hrs`,"Clocked working time","blue"),
@@ -83,7 +84,11 @@ function renderCommand(){
   $("collectorSnapshot").innerHTML=stats.length?`<div class="table-wrap"><table><thead><tr><th>Collector</th><th>Cars</th><th>Hours</th><th>Reduction</th></tr></thead><tbody>${stats.map(s=>`<tr><td><strong>${s.name}</strong></td><td>${s.count}</td><td>${num(s.hours)}</td><td>${money(s.reduction)}</td></tr>`).join("")}</tbody></table></div>`:"No collectors.";
 }
 function jobRow(j){
-  return `<div class="job-row"><div><h4>${j.registration||"No registration"} · ${j.make||""} ${j.model||""}</h4><p>${collectorName(j.collector)} · ${j.collectionAddress||"No collection address"} → ${j.destination||"No destination"}</p></div><div><span class="badge ${j.status==="Delivered"?"green":j.status==="Cancelled"?"red":"blue"}">${j.status||"Scheduled"}</span></div></div>`
+  const badgeClass=j.status==="Delivered"?"green":j.status==="No Collection"||j.status==="Cancelled"?"red":"blue";
+  return `<div class="job-row">
+    <div><h4>${j.registration||"No registration"} · ${j.make||""} ${j.model||""}</h4><p>${collectorName(j.collector)} · ${j.collectionAddress||"No collection address"} → ${j.destination||"No destination"}</p></div>
+    <div class="job-row-actions"><span class="badge ${badgeClass}">${j.status||"Scheduled"}</span><button class="ghost-btn no-print" onclick="markNoCollection('${j.id}')">No Collection</button><button class="ghost-btn danger-text no-print" onclick="deleteCollection('${j.id}')">Delete</button></div>
+  </div>`
 }
 
 function renderDiary(){
@@ -138,6 +143,7 @@ function renderDriver(){
       <button class="action-step" onclick="setStatus('${j.id}','Appraising')">Start Appraisal</button>
       <button class="action-step" onclick="setStatus('${j.id}','Collected')">Vehicle Collected</button>
       <button class="action-step" onclick="setStatus('${j.id}','Delivered')">Delivered</button>
+      <button class="action-step" onclick="markNoCollection('${j.id}')">No Collection</button>
       <button class="action-stop" onclick="clockOut('${j.id}')">Clock Out</button>
     </div>
     <div class="panel" style="margin:0;border:0;box-shadow:none">
@@ -154,6 +160,25 @@ $("driverJobSelect").onchange=renderDriver;
 window.clockIn=id=>{const j=state.collections.find(x=>x.id===id);if(!j.clockIn)j.clockIn=new Date().toISOString();j.status="Travelling";save();renderAll();toast("Collector clocked in")};
 window.clockOut=id=>{const j=state.collections.find(x=>x.id===id);j.clockOut=new Date().toISOString();save();renderAll();toast("Collector clocked out")};
 window.setStatus=(id,status)=>{const j=state.collections.find(x=>x.id===id);j.status=status;j.timeline.push({time:new Date().toISOString(),text:status});save();renderAll();toast("Status updated")};
+window.markNoCollection=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+  const reason=window.prompt("Reason for no collection (optional):",j.noCollectionReason||"");
+  if(reason===null)return;
+  j.status="No Collection";
+  j.noCollectionReason=reason.trim();
+  j.noCollectionAt=new Date().toISOString();
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:j.noCollectionAt,text:`No Collection${j.noCollectionReason?": "+j.noCollectionReason:""}`});
+  save();renderAll();toast("Marked as no collection — costs retained");
+};
+window.deleteCollection=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+  if(!window.confirm(`Delete collection ${j.registration||""}? This permanently removes it from all reports.`))return;
+  state.collections=state.collections.filter(x=>x.id!==id);
+  save();renderAll();toast("Collection deleted");
+};
 window.saveMileage=id=>{const j=state.collections.find(x=>x.id===id);j.startMileage=Number($("startMiles").value||0);j.finishMileage=Number($("finishMiles").value||0);j.distanceTravelled=Number($("distanceMiles").value||Math.max(0,j.finishMileage-j.startMileage));save();renderAll();toast("Mileage saved")};
 
 const checkItems=[
@@ -418,14 +443,18 @@ function monthStats(m){
     });
   });
 
+  const noCollections=jobs.filter(j=>j.status==="No Collection");
   const miles=jobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
   const hours=jobs.reduce((s,j)=>s+hoursWorked(j),0);
   const cost=Object.values(expenseTotals).reduce((s,v)=>s+v,0);
-  const red=jobs.reduce((s,j)=>s+reduction(j),0);
+  const red=completed.reduce((s,j)=>s+reduction(j),0);
   const collectionCount=completed.length;
+  const noCollectionCost=noCollections.reduce((s,j)=>s+totalExpenses(j),0);
 
   return {
     jobs:collectionCount,
+    noCollections:noCollections.length,
+    noCollectionCost,
     miles,
     hours,
     cost,
@@ -471,6 +500,7 @@ function renderReports(){
 
   $("reportMetrics").innerHTML=[
     metric("Cars collected",a.jobs,`${a.jobs-b.jobs>=0?"+":""}${a.jobs-b.jobs} vs comparison`),
+    metric("No collections",a.noCollections,`${money(a.noCollectionCost)} costs incurred`,"warn"),
     metric("Miles travelled",`${num(a.miles,0)} mi`,`${num(a.avgMiles,0)} miles per collection`),
     metric("Total travel cost",money(a.cost),`${money(a.avgCost)} per collection`,"warn"),
     metric("Average travel cost",money(a.avgCost),"Total travel cost ÷ collections","blue"),
@@ -504,6 +534,8 @@ function renderReports(){
 
   const comparisonRows=[
     ["Cars collected",a.jobs,b.jobs,"count"],
+    ["No collections",a.noCollections,b.noCollections,"count"],
+    ["No collection costs",a.noCollectionCost,b.noCollectionCost,"money"],
     ["Miles travelled",a.miles,b.miles,"miles"],
     ["Average miles per collection",a.avgMiles,b.avgMiles,"miles"],
     ["Hours worked",a.hours,b.hours,"hours"],
@@ -563,9 +595,85 @@ function renderReports(){
       <td>${money(r.net)}</td>
     </tr>`).join("")}</tbody>
   </table></div>`;
+  renderNoCollectionReport();
 }
 $("monthA").onchange=renderReports;
 $("monthB").onchange=renderReports;
+
+function availableReportYears(){
+  const years=new Set(state.collections.map(j=>new Date((j.collectionDate||j.createdAt)+"T12:00:00").getFullYear()));
+  years.add(new Date().getFullYear());
+  return [...years].filter(Number.isFinite).sort((a,b)=>b-a);
+}
+
+function renderNoCollectionReport(){
+  const select=$("noCollectionYear");
+  if(!select)return;
+
+  const years=availableReportYears();
+  const previous=select.value;
+  select.innerHTML=years.map(y=>`<option value="${y}">${y}</option>`).join("");
+  if(years.includes(Number(previous)))select.value=previous;
+
+  const year=Number(select.value||new Date().getFullYear());
+  const jobs=state.collections
+    .filter(j=>j.status==="No Collection")
+    .filter(j=>new Date((j.collectionDate||j.createdAt)+"T12:00:00").getFullYear()===year)
+    .sort((a,b)=>new Date(b.collectionDate||b.createdAt)-new Date(a.collectionDate||a.createdAt));
+
+  const totalCost=jobs.reduce((s,j)=>s+totalExpenses(j),0);
+  const totalMiles=jobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
+  const totalHours=jobs.reduce((s,j)=>s+hoursWorked(j),0);
+  const averageCost=jobs.length?totalCost/jobs.length:0;
+
+  $("noCollectionMetrics").innerHTML=[
+    metric("No Collection Trips",jobs.length,`${year} total`,"warn"),
+    metric("Cost of No Collections",money(totalCost),`${money(averageCost)} average per trip`,"warn"),
+    metric("Miles Travelled",`${num(totalMiles,0)} mi`,`${jobs.length?num(totalMiles/jobs.length,0):0} average per trip`,"blue"),
+    metric("Hours Incurred",`${num(totalHours)} hrs`,`${jobs.length?num(totalHours/jobs.length):0} average per trip`,"blue")
+  ].join("");
+
+  const monthNames=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const rows=monthNames.map((name,monthIndex)=>{
+    const monthJobs=jobs.filter(j=>new Date((j.collectionDate||j.createdAt)+"T12:00:00").getMonth()===monthIndex);
+    const cost=monthJobs.reduce((s,j)=>s+totalExpenses(j),0);
+    const miles=monthJobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
+    const hours=monthJobs.reduce((s,j)=>s+hoursWorked(j),0);
+    return {name,count:monthJobs.length,cost,miles,hours};
+  });
+
+  $("noCollectionMonthlyTable").innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>Month</th><th>No Collection Trips</th><th>Cost</th><th>Miles</th><th>Hours</th><th>Average Cost/Trip</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td><strong>${r.name}</strong></td>
+      <td>${r.count}</td>
+      <td>${money(r.cost)}</td>
+      <td>${num(r.miles,0)} mi</td>
+      <td>${num(r.hours)} hrs</td>
+      <td>${money(r.count?r.cost/r.count:0)}</td>
+    </tr>`).join("")}</tbody>
+    <tfoot><tr><th>Year Total</th><th>${jobs.length}</th><th>${money(totalCost)}</th><th>${num(totalMiles,0)} mi</th><th>${num(totalHours)} hrs</th><th>${money(averageCost)}</th></tr></tfoot>
+  </table></div>`;
+
+  $("noCollectionDetailTable").innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Registration</th><th>Collector</th><th>Reason</th><th>Train</th><th>Taxi</th><th>Bus</th><th>Fuel</th><th>Total Cost</th><th>Miles</th><th>Hours</th></tr></thead>
+    <tbody>${jobs.map(j=>`<tr>
+      <td>${dateOnly(j.collectionDate)}</td>
+      <td><strong>${j.registration||"—"}</strong></td>
+      <td>${collectorName(j.collector)}</td>
+      <td>${j.noCollectionReason||"No reason recorded"}</td>
+      <td>${money(j.expenses?.train||0)}</td>
+      <td>${money(j.expenses?.taxi||0)}</td>
+      <td>${money(j.expenses?.bus||0)}</td>
+      <td>${money(j.expenses?.fuel||0)}</td>
+      <td><strong>${money(totalExpenses(j))}</strong></td>
+      <td>${num(j.distanceTravelled||0,0)} mi</td>
+      <td>${num(hoursWorked(j))} hrs</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+if($("noCollectionYear"))$("noCollectionYear").onchange=renderNoCollectionReport;
 
 function renderLeague(){
   const mk=monthKey(new Date());

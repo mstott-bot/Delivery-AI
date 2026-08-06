@@ -1,18 +1,22 @@
-# Delivery AI DAI-007
+# Delivery AI DAI-009
 
-## DAI-007 fix
-- Removed Cost per Mile from the actual dashboard code
-- Removed Cost per Mile from month comparison reports
-- Removed Cost per Mile from collector efficiency reports
-- Added Average Travel Cost per Collection
-- Added Miles per Collection
-- Added Average Reduction
-- Added Net Saving per Collection
-- Collector table now shows Miles per Collection and Cost per Collection
+## No Collection reporting
+- Command Centre tile renamed to No Collection Trips
+- Tile counts rejected-vehicle trips for the current month
+- Tile shows the cost incurred on those trips
+- Dedicated No Collection Report
+- Select any reporting year
+- Monthly no-collection count
+- Monthly no-collection cost
+- Monthly miles travelled
+- Monthly hours incurred
+- Average cost per no-collection trip
+- Full yearly totals
+- Detailed list including registration, collector, reason and expense breakdown
+- Train, taxi, bus and fuel costs shown for each no-collection trip
+- Included in printable Reports output
 
 ## Update GitHub
-Replace the current files, then run:
-
 git add .
-git commit -m "DAI-007 Replace cost per mile KPI"
+git commit -m "DAI-009 Add no collection monthly and yearly reports"
 git push

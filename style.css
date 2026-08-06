@@ -73,3 +73,7 @@ input:focus,select:focus,textarea:focus{border-color:#6aa5ec;box-shadow:0 0 0 3p
   .metric-grid{grid-template-columns:repeat(4,1fr)}
   .metric-card{box-shadow:none;break-inside:avoid}
 }
+
+.job-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.danger-text{color:var(--red)!important}
+
+tfoot th{border-top:2px solid var(--line);background:#f7f9fc}
