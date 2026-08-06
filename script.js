@@ -43,6 +43,7 @@ function renderAll(){
   renderDiary();
   renderDriver();
   renderAppraisals();
+  renderAppraisalHistory();
   renderExpenses();
   renderHistory();
   renderReports();
@@ -198,11 +199,146 @@ window.saveAppraisal=id=>{
   const j=state.collections.find(x=>x.id===id),checks={},tyres={};
   document.querySelectorAll("[data-check]").forEach(x=>checks[x.dataset.check]=x.value);
   document.querySelectorAll("[data-tyre]").forEach(x=>tyres[x.dataset.tyre]=Number(x.value||0));
-  j.appraisal={checks,tyres,damageParts:[...document.querySelectorAll("[data-damage].selected")].map(x=>x.dataset.damage),faultCodes:$("faultCodes").value,bodyDescription:$("bodyDescription").value,interiorDescription:$("interiorDescription").value,notes:$("appraisalNotes").value};
-  j.appraisalComplete=true;save();renderAll();toast("Appraisal saved");
-};
-window.printAppraisal=()=>{document.querySelectorAll(".page").forEach(p=>p.classList.remove("print-target"));$("page-appraisals").classList.add("print-target");window.print()};
 
+  const savedAt=new Date().toISOString();
+  j.appraisal={
+    checks,
+    tyres,
+    damageParts:[...document.querySelectorAll("[data-damage].selected")].map(x=>x.dataset.damage),
+    faultCodes:$("faultCodes").value,
+    bodyDescription:$("bodyDescription").value,
+    interiorDescription:$("interiorDescription").value,
+    notes:$("appraisalNotes").value,
+    savedAt
+  };
+  j.appraisalComplete=true;
+  j.appraisalSavedAt=savedAt;
+
+  save();
+  renderAll();
+  toast("Appraisal saved permanently");
+};
+window.printAppraisal=()=>{
+  const id=$("appraisalJobSelect").value;
+  const j=state.collections.find(x=>x.id===id);
+  if(j?.appraisalComplete){
+    printSavedAppraisal(id);
+    return;
+  }
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("print-target"));
+  $("page-appraisals").classList.add("print-target");
+  window.print();
+};
+
+
+function appraisalPrintHtml(j){
+  const a=j.appraisal||{};
+  const checks=Object.entries(a.checks||{});
+  const tyres=a.tyres||{};
+  const damages=a.damageParts||[];
+
+  return `<div class="saved-appraisal-print">
+    <div class="saved-print-title">
+      <div>
+        <p class="eyebrow">DELIVERY AI VEHICLE APPRAISAL</p>
+        <h1>${j.registration||"No registration"} · ${j.make||""} ${j.model||""}</h1>
+      </div>
+      <div>
+        <strong>${collectorName(j.collector)}</strong>
+        <p>${dateOnly(j.collectionDate)}</p>
+      </div>
+    </div>
+
+    <div class="print-summary-grid">
+      <div><span>Collection address</span><strong>${j.collectionAddress||"—"}</strong></div>
+      <div><span>Destination</span><strong>${j.destination||"—"}</strong></div>
+      <div><span>Vehicle mileage</span><strong>${j.vehicleMileage||"—"}</strong></div>
+      <div><span>Appraisal saved</span><strong>${dt(j.appraisalSavedAt||a.savedAt)}</strong></div>
+    </div>
+
+    <h3>Tyre tread depths</h3>
+    <table><thead><tr><th>NSF</th><th>NSR</th><th>OSF</th><th>OSR</th></tr></thead>
+      <tbody><tr><td>${tyres.NSF||0} mm</td><td>${tyres.NSR||0} mm</td><td>${tyres.OSF||0} mm</td><td>${tyres.OSR||0} mm</td></tr></tbody>
+    </table>
+
+    <h3>Equipment and vehicle checks</h3>
+    <table><thead><tr><th>Check</th><th>Result</th></tr></thead>
+      <tbody>${checks.map(([name,value])=>`<tr><td>${name}</td><td>${value||"Not recorded"}</td></tr>`).join("")}</tbody>
+    </table>
+
+    <h3>Selected damage areas</h3>
+    <p>${damages.length?damages.join(", "):"No damage areas selected"}</p>
+
+    <h3>Fault codes and diagnostics</h3>
+    <p>${a.faultCodes||"None recorded"}</p>
+
+    <h3>Bodywork condition</h3>
+    <p>${a.bodyDescription||"No description recorded"}</p>
+
+    <h3>Interior condition</h3>
+    <p>${a.interiorDescription||"No description recorded"}</p>
+
+    <h3>Additional notes</h3>
+    <p>${a.notes||"No additional notes"}</p>
+  </div>`;
+}
+
+function renderAppraisalHistory(){
+  const q=($("appraisalHistorySearch")?.value||"").toLowerCase();
+  const jobs=state.collections
+    .filter(j=>j.appraisalComplete)
+    .filter(j=>[j.registration,collectorName(j.collector),j.make,j.model,j.collectionAddress,j.destination].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>new Date(b.appraisalSavedAt||b.collectionDate)-new Date(a.appraisalSavedAt||a.collectionDate));
+
+  if(!$("appraisalHistoryList"))return;
+
+  $("appraisalHistoryList").innerHTML=jobs.length?`<div class="table-wrap"><table>
+    <thead><tr><th>Date</th><th>Registration</th><th>Vehicle</th><th>Collector</th><th>Reduction</th><th>Saved</th><th class="no-print">Actions</th></tr></thead>
+    <tbody>${jobs.map(j=>`<tr>
+      <td>${dateOnly(j.collectionDate)}</td>
+      <td><strong>${j.registration}</strong></td>
+      <td>${j.make||""} ${j.model||""}</td>
+      <td>${collectorName(j.collector)}</td>
+      <td>${money(reduction(j))}</td>
+      <td>${dt(j.appraisalSavedAt||j.appraisal?.savedAt)}</td>
+      <td class="no-print">
+        <button class="ghost-btn" onclick="openSavedAppraisal('${j.id}')">Open</button>
+        <button class="primary-btn" onclick="printSavedAppraisal('${j.id}')">Print</button>
+      </td>
+    </tr>`).join("")}</tbody>
+  </table></div>`:"<p>No saved appraisals found.</p>";
+}
+
+if($("appraisalHistorySearch"))$("appraisalHistorySearch").oninput=renderAppraisalHistory;
+
+window.openSavedAppraisal=id=>{
+  showPage("appraisals");
+  $("appraisalJobSelect").value=id;
+  renderAppraisals();
+};
+
+window.printSavedAppraisal=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j||!j.appraisalComplete){toast("No saved appraisal found");return}
+
+  const printWindow=window.open("","_blank");
+  printWindow.document.write(`<!DOCTYPE html><html><head><title>${j.registration} Appraisal</title>
+    <link rel="stylesheet" href="style.css">
+    <style>body{padding:30px;background:#fff}.saved-appraisal-print{max-width:900px;margin:auto}.saved-print-title{display:flex;justify-content:space-between;border-bottom:2px solid #172033;padding-bottom:18px;margin-bottom:20px}.print-summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}.print-summary-grid div{border:1px solid #ddd;padding:12px;border-radius:8px}.print-summary-grid span{display:block;color:#666;font-size:12px}.print-summary-grid strong{display:block;margin-top:5px}h3{margin-top:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:9px;text-align:left}</style>
+  </head><body>${appraisalPrintHtml(j)}</body></html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(()=>printWindow.print(),300);
+};
+
+window.printReports=()=>{
+  const a=$("monthA").value;
+  const b=$("monthB").value;
+  $("printReportPeriod").textContent=`${a} compared with ${b}`;
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("print-target"));
+  $("page-reports").classList.add("print-target");
+  window.print();
+};
 function renderExpenses(){
   $("expenseList").innerHTML=state.collections.length?state.collections.map(j=>`<div class="panel" style="box-shadow:none">
     <div class="panel-heading">
@@ -274,31 +410,162 @@ $("historySearch").oninput=renderHistory;
 function monthStats(m){
   const jobs=state.collections.filter(j=>monthKey(j.collectionDate||j.createdAt)===m);
   const completed=jobs.filter(j=>j.status==="Delivered");
-  return {jobs:completed.length,miles:jobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0),hours:jobs.reduce((s,j)=>s+hoursWorked(j),0),cost:jobs.reduce((s,j)=>s+totalExpenses(j),0),red:jobs.reduce((s,j)=>s+reduction(j),0)}
+  const expenseTotals={train:0,taxi:0,bus:0,fuel:0,parking:0,tolls:0,other:0};
+
+  jobs.forEach(j=>{
+    Object.keys(expenseTotals).forEach(k=>{
+      expenseTotals[k]+=Number(j.expenses?.[k]||0);
+    });
+  });
+
+  const miles=jobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
+  const hours=jobs.reduce((s,j)=>s+hoursWorked(j),0);
+  const cost=Object.values(expenseTotals).reduce((s,v)=>s+v,0);
+  const red=jobs.reduce((s,j)=>s+reduction(j),0);
+  const collectionCount=completed.length;
+
+  return {
+    jobs:collectionCount,
+    miles,
+    hours,
+    cost,
+    red,
+    expenses:expenseTotals,
+    avgMiles:collectionCount?miles/collectionCount:0,
+    avgCost:collectionCount?cost/collectionCount:0,
+    avgHours:collectionCount?hours/collectionCount:0,
+    costPerMile:miles?cost/miles:0,
+    net:red-cost
+  };
 }
+
+function pctChange(current,comparison){
+  if(!comparison)return current?100:0;
+  return ((current-comparison)/comparison)*100;
+}
+
+function diffCell(current,comparison,type="money"){
+  const diff=current-comparison;
+  const formatted=type==="money"?money(Math.abs(diff)):
+    type==="miles"?`${num(Math.abs(diff),0)} mi`:
+    type==="hours"?`${num(Math.abs(diff))} hrs`:
+    num(Math.abs(diff),0);
+
+  if(diff===0)return `<span class="badge blue">No change</span>`;
+  return `<span class="badge ${diff>0?"amber":"green"}">${diff>0?"+":"-"}${formatted}</span>`;
+}
+
 function renderReports(){
-  const now=new Date(),thisM=monthKey(now),last=new Date(now.getFullYear(),now.getMonth()-1,1),lastM=monthKey(last);
-  if(!$("monthA").value)$("monthA").value=thisM;if(!$("monthB").value)$("monthB").value=lastM;
-  const a=monthStats($("monthA").value),b=monthStats($("monthB").value);
+  const now=new Date();
+  const thisM=monthKey(now);
+  const last=new Date(now.getFullYear(),now.getMonth()-1,1);
+  const lastM=monthKey(last);
+
+  if(!$("monthA").value)$("monthA").value=thisM;
+  if(!$("monthB").value)$("monthB").value=lastM;
+
+  const monthA=$("monthA").value;
+  const monthB=$("monthB").value;
+  const a=monthStats(monthA);
+  const b=monthStats(monthB);
+
   $("reportMetrics").innerHTML=[
     metric("Cars collected",a.jobs,`${a.jobs-b.jobs>=0?"+":""}${a.jobs-b.jobs} vs comparison`),
-    metric("Hours worked",`${num(a.hours)} hrs`,`${num(a.jobs?a.hours/a.jobs:0)} hrs per car`),
-    metric("Average travel cost",money(a.jobs?a.cost/a.jobs:0),`${money(a.cost)} total`),
-    metric("Average reduction",money(a.jobs?a.red/a.jobs:0),`${money(a.red)} total`)
+    metric("Miles travelled",`${num(a.miles,0)} mi`,`${num(a.avgMiles,0)} miles per collection`),
+    metric("Total travel cost",money(a.cost),`${money(a.avgCost)} per collection`,"warn"),
+    metric("Average travel cost",money(a.avgCost),"Total travel cost ÷ collections","blue"),
+    metric("Hours worked",`${num(a.hours)} hrs`,`${num(a.avgHours)} hrs per collection`),
+    metric("Average reduction",money(a.jobs?a.red/a.jobs:0),`${money(a.red)} total money saved`,"good"),
+    metric("Net saving per collection",money(a.jobs?a.net/a.jobs:0),`${money(a.net)} total net saving`,"good"),
+    metric("Fuel spend",money(a.expenses.fuel),`${money(b.expenses.fuel)} comparison month`,"warn")
   ].join("");
-  const rows=[
-    ["Cars collected",a.jobs,b.jobs],
-    ["Distance travelled",`${num(a.miles,0)} mi`,`${num(b.miles,0)} mi`],
-    ["Hours worked",`${num(a.hours)} hrs`,`${num(b.hours)} hrs`],
-    ["Travel costs",money(a.cost),money(b.cost)],
-    ["Average travel cost",money(a.jobs?a.cost/a.jobs:0),money(b.jobs?b.cost/b.jobs:0)],
-    ["Reductions achieved",money(a.red),money(b.red)],
-    ["Average reduction",money(a.jobs?a.red/a.jobs:0),money(b.jobs?b.red/b.jobs:0)],
-    ["Net saving",money(a.red-a.cost),money(b.red-b.cost)]
+
+  const expenseRows=[
+    ["Train",a.expenses.train,b.expenses.train],
+    ["Taxi",a.expenses.taxi,b.expenses.taxi],
+    ["Bus",a.expenses.bus,b.expenses.bus],
+    ["Fuel",a.expenses.fuel,b.expenses.fuel],
+    ["Parking",a.expenses.parking,b.expenses.parking],
+    ["Tolls",a.expenses.tolls,b.expenses.tolls],
+    ["Other",a.expenses.other,b.expenses.other],
+    ["Total Travel Cost",a.cost,b.cost]
   ];
-  $("monthComparison").innerHTML=`<div class="table-wrap"><table><thead><tr><th>Metric</th><th>${$("monthA").value}</th><th>${$("monthB").value}</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${r[0]}</strong></td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("")}</tbody></table></div>`;
+
+  $("expenseComparison").innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>Expense Type</th><th>${monthA}</th><th>${monthB}</th><th>Difference</th><th>% Change</th></tr></thead>
+    <tbody>${expenseRows.map(r=>`<tr>
+      <td><strong>${r[0]}</strong></td>
+      <td>${money(r[1])}</td>
+      <td>${money(r[2])}</td>
+      <td>${diffCell(r[1],r[2],"money")}</td>
+      <td>${num(pctChange(r[1],r[2]))}%</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+
+  const comparisonRows=[
+    ["Cars collected",a.jobs,b.jobs,"count"],
+    ["Miles travelled",a.miles,b.miles,"miles"],
+    ["Average miles per collection",a.avgMiles,b.avgMiles,"miles"],
+    ["Hours worked",a.hours,b.hours,"hours"],
+    ["Average hours per collection",a.avgHours,b.avgHours,"hours"],
+    ["Total travel cost",a.cost,b.cost,"money"],
+    ["Average travel cost per collection",a.avgCost,b.avgCost,"money"],
+    ["Miles per collection",a.avgMiles,b.avgMiles,"miles"],
+    ["Money saved",a.red,b.red,"money"],
+    ["Average reduction",a.jobs?a.red/a.jobs:0,b.jobs?b.red/b.jobs:0,"money"],
+    ["Net saving",a.net,b.net,"money"],
+    ["Net saving per collection",a.jobs?a.net/a.jobs:0,b.jobs?b.net/b.jobs:0,"money"]
+  ];
+
+  $("monthComparison").innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>Metric</th><th>${monthA}</th><th>${monthB}</th><th>Difference</th></tr></thead>
+    <tbody>${comparisonRows.map(r=>`<tr>
+      <td><strong>${r[0]}</strong></td>
+      <td>${r[3]==="money"?money(r[1]):r[3]==="miles"?`${num(r[1],0)} mi`:r[3]==="hours"?`${num(r[1])} hrs`:num(r[1],0)}</td>
+      <td>${r[3]==="money"?money(r[2]):r[3]==="miles"?`${num(r[2],0)} mi`:r[3]==="hours"?`${num(r[2])} hrs`:num(r[2],0)}</td>
+      <td>${diffCell(r[1],r[2],r[3])}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+
+  const collectorRows=state.collectors.map(c=>{
+    const jobs=state.collections.filter(j=>j.collector===c.id&&monthKey(j.collectionDate||j.createdAt)===monthA);
+    const delivered=jobs.filter(j=>j.status==="Delivered").length;
+    const miles=jobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
+    const travel=jobs.reduce((s,j)=>s+totalExpenses(j),0);
+    const fuel=jobs.reduce((s,j)=>s+Number(j.expenses?.fuel||0),0);
+    const hrs=jobs.reduce((s,j)=>s+hoursWorked(j),0);
+    const red=jobs.reduce((s,j)=>s+reduction(j),0);
+
+    return {
+      name:c.name,
+      cars:delivered,
+      miles,
+      fuel,
+      travel,
+      avgCost:delivered?travel/delivered:0,
+      avgMiles:delivered?miles/delivered:0,
+      hours:hrs,
+      net:red-travel
+    };
+  }).sort((x,y)=>y.cars-x.cars);
+
+  $("collectorCostTable").innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>Collector</th><th>Cars</th><th>Miles</th><th>Miles/Collection</th><th>Fuel</th><th>Travel Cost</th><th>Cost/Collection</th><th>Hours</th><th>Net Saving</th></tr></thead>
+    <tbody>${collectorRows.map(r=>`<tr>
+      <td><strong>${r.name}</strong></td>
+      <td>${r.cars}</td>
+      <td>${num(r.miles,0)} mi</td>
+      <td>${num(r.avgMiles,0)} mi</td>
+      <td>${money(r.fuel)}</td>
+      <td>${money(r.travel)}</td>
+      <td>${money(r.avgCost)}</td>
+      <td>${num(r.hours)} hrs</td>
+      <td>${money(r.net)}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
 }
-$("monthA").onchange=renderReports;$("monthB").onchange=renderReports;
+$("monthA").onchange=renderReports;
+$("monthB").onchange=renderReports;
 
 function renderLeague(){
   const mk=monthKey(new Date());

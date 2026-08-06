@@ -52,3 +52,24 @@ input:focus,select:focus,textarea:focus{border-color:#6aa5ec;box-shadow:0 0 0 3p
 @media(max-width:980px){.app-shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.sidebar nav{display:grid;grid-template-columns:repeat(2,1fr)}.main-content{padding:0 16px 30px}.metric-grid{grid-template-columns:repeat(2,1fr)}.content-grid.two,.form-grid.three,.form-grid.two{grid-template-columns:1fr}.topbar{height:auto;padding:18px 0;gap:14px}.driver-details{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.sidebar nav{grid-template-columns:1fr}.metric-grid{grid-template-columns:1fr}.hero-card{align-items:flex-start;gap:20px;flex-direction:column}.hero-stat{text-align:left}.topbar,.topbar-actions{align-items:flex-start;flex-direction:column}.driver-actions{grid-template-columns:1fr}.driver-details,.check-grid{grid-template-columns:1fr}.check-row{grid-template-columns:1fr}.main-content{padding:0 10px 25px}}
 @media print{.sidebar,.topbar,.no-print{display:none!important}.app-shell{display:block}.main-content{padding:0}.page{display:none!important}.page.print-target{display:block!important}.panel{box-shadow:none;border:0}.primary-btn,.secondary-btn,.ghost-btn{display:none!important}}
+
+
+.print-report-header{display:none}
+.saved-appraisal-print{background:#fff;color:#172033}
+.saved-print-title{display:flex;justify-content:space-between;gap:25px;align-items:flex-start}
+.print-summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.print-summary-grid div{border:1px solid var(--line);border-radius:10px;padding:12px}
+.print-summary-grid span{display:block;color:var(--muted);font-size:12px}
+.print-summary-grid strong{display:block;margin-top:5px}
+
+@media print{
+  body{background:#fff}
+  .print-report-header{display:block;margin-bottom:20px;border-bottom:2px solid #172033;padding-bottom:12px}
+  .print-report-header h1{margin:0 0 5px}
+  #page-reports .panel{padding:0}
+  #page-reports .form-section{break-inside:avoid}
+  #page-reports table{font-size:11px}
+  #page-reports th,#page-reports td{padding:8px}
+  .metric-grid{grid-template-columns:repeat(4,1fr)}
+  .metric-card{box-shadow:none;break-inside:avoid}
+}

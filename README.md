@@ -1,21 +1,18 @@
-# Delivery AI DAI-002
+# Delivery AI DAI-007
 
-## Changes
-- Removed Brakes working from the appraisal
-- Agreed Purchase Price remains in New Collection
-- Removed Final Collection Price from New Collection
-- Removed Expected Reduction from New Collection
-- Added Is there a settlement on this car? to New Collection
-- Expenses now includes Agreed Purchase Price
-- Expenses now includes Final Collection Price
-- Money Saved calculates automatically
-- Reports and Collector League use Money Saved for total and average reductions
+## DAI-007 fix
+- Removed Cost per Mile from the actual dashboard code
+- Removed Cost per Mile from month comparison reports
+- Removed Cost per Mile from collector efficiency reports
+- Added Average Travel Cost per Collection
+- Added Miles per Collection
+- Added Average Reduction
+- Added Net Saving per Collection
+- Collector table now shows Miles per Collection and Cost per Collection
 
-## Replace your current files
-Replace index.html, script.js, style.css and README.md with these files.
-
-Then run:
+## Update GitHub
+Replace the current files, then run:
 
 git add .
-git commit -m "DAI-002 Update pricing and appraisal"
+git commit -m "DAI-007 Replace cost per mile KPI"
 git push
