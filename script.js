@@ -99,18 +99,13 @@ function fillCollectors(){
 }
 const form=$("collectionForm");
 form.elements.collectionDate.value=new Date().toISOString().slice(0,10);
-function updateReduction(){
-  const a=Number(form.elements.agreedPrice.value||0),f=Number(form.elements.finalPrice.value||0);
-  form.elements.calculatedReduction.value=(Math.max(0,a-f)).toFixed(2);
-}
-form.elements.agreedPrice.oninput=updateReduction;form.elements.finalPrice.oninput=updateReduction;
 form.onsubmit=e=>{
   e.preventDefault();
   const x=Object.fromEntries(new FormData(form).entries());
   const job={
     id:uid("job"),createdAt:new Date().toISOString(),status:"Scheduled",
     ...x,registration:(x.registration||"").toUpperCase(),
-    agreedPrice:Number(x.agreedPrice||0),finalPrice:Number(x.finalPrice||0),
+    agreedPrice:Number(x.agreedPrice||0),finalPrice:0,hasSettlement:x.hasSettlement||"",
     estimatedDistance:Number(x.estimatedDistance||0),
     expenses:{train:0,taxi:0,bus:0,fuel:0,parking:0,tolls:0,other:0},
     appraisal:{checks:{},tyres:{},damageParts:[],faultCodes:"",bodyDescription:"",interiorDescription:""},
@@ -164,7 +159,7 @@ const checkItems=[
 "Air conditioning working","Satellite navigation working","Bluetooth working","Lights working","Vents undamaged","Two keys present",
 "Engine oil level good","Coolant level good","Front electric windows working","Rear electric windows working",
 "Seat belts pulled out and checked","Electric mirrors working","Reverse camera working","All console buttons working",
-"Wipers and washers working","Windscreen condition good","Engine starts correctly","Clutch and gearbox working","Brakes working","Handbrake working"
+"Wipers and washers working","Windscreen condition good","Engine starts correctly","Clutch and gearbox working","Handbrake working"
 ];
 const damageParts=["Front bumper","Bonnet","Roof","Rear bumper","Boot","NSF wing","OSF wing","NSF door","NSR door","OSF door","OSR door","Wheels","Windscreen"];
 function renderAppraisals(){
@@ -210,16 +205,63 @@ window.printAppraisal=()=>{document.querySelectorAll(".page").forEach(p=>p.class
 
 function renderExpenses(){
   $("expenseList").innerHTML=state.collections.length?state.collections.map(j=>`<div class="panel" style="box-shadow:none">
-    <div class="panel-heading"><div><h3>${j.registration} · ${collectorName(j.collector)}</h3><p>${dateOnly(j.collectionDate)}</p></div><strong>${money(totalExpenses(j))}</strong></div>
-    <div class="form-grid three">
-      ${["train","taxi","bus","fuel","parking","tolls","other"].map(k=>`<label>${k[0].toUpperCase()+k.slice(1)} (£)<input type="number" step=".01" data-expense-job="${j.id}" data-expense-key="${k}" value="${j.expenses?.[k]||0}"></label>`).join("")}
-    </div><button class="primary-btn" onclick="saveExpenses('${j.id}')">Save Expenses</button>
+    <div class="panel-heading">
+      <div>
+        <h3>${j.registration} · ${collectorName(j.collector)}</h3>
+        <p>${dateOnly(j.collectionDate)} · Settlement: ${j.hasSettlement||"Not recorded"}</p>
+      </div>
+      <strong>Travel: ${money(totalExpenses(j))}</strong>
+    </div>
+
+    <div class="form-section">
+      <h4>Vehicle purchase and saving</h4>
+      <div class="form-grid three">
+        <label>Agreed purchase price (£)
+          <input type="number" min="0" step=".01" data-purchase-job="${j.id}" data-purchase-key="agreedPrice" value="${j.agreedPrice||0}" oninput="previewSaving('${j.id}')">
+        </label>
+        <label>Final collection price (£)
+          <input type="number" min="0" step=".01" data-purchase-job="${j.id}" data-purchase-key="finalPrice" value="${j.finalPrice||0}" oninput="previewSaving('${j.id}')">
+        </label>
+        <label>Money saved (£)
+          <input type="text" id="saving_${j.id}" readonly value="${money(reduction(j))}">
+        </label>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h4>Travel expenses</h4>
+      <div class="form-grid three">
+        ${["train","taxi","bus","fuel","parking","tolls","other"].map(k=>`<label>${k[0].toUpperCase()+k.slice(1)} (£)<input type="number" step=".01" data-expense-job="${j.id}" data-expense-key="${k}" value="${j.expenses?.[k]||0}"></label>`).join("")}
+      </div>
+    </div>
+
+    <button class="primary-btn" onclick="saveExpenses('${j.id}')">Save Expenses & Prices</button>
   </div>`).join(""):"<p>No collections available.</p>";
 }
+
+window.previewSaving=id=>{
+  const agreed=Number(document.querySelector(`[data-purchase-job="${id}"][data-purchase-key="agreedPrice"]`)?.value||0);
+  const finalPrice=Number(document.querySelector(`[data-purchase-job="${id}"][data-purchase-key="finalPrice"]`)?.value||0);
+  const saving=Math.max(0,agreed-finalPrice);
+  const output=$("saving_"+id);
+  if(output)output.value=money(saving);
+};
+
 window.saveExpenses=id=>{
-  const j=state.collections.find(x=>x.id===id);j.expenses=j.expenses||{};
-  document.querySelectorAll(`[data-expense-job="${id}"]`).forEach(x=>j.expenses[x.dataset.expenseKey]=Number(x.value||0));
-  save();renderAll();toast("Expenses saved");
+  const j=state.collections.find(x=>x.id===id);
+  j.expenses=j.expenses||{};
+
+  document.querySelectorAll(`[data-purchase-job="${id}"]`).forEach(x=>{
+    j[x.dataset.purchaseKey]=Number(x.value||0);
+  });
+
+  document.querySelectorAll(`[data-expense-job="${id}"]`).forEach(x=>{
+    j.expenses[x.dataset.expenseKey]=Number(x.value||0);
+  });
+
+  save();
+  renderAll();
+  toast("Expenses, prices and saving saved");
 };
 
 function renderHistory(){

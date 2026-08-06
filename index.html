@@ -106,7 +106,7 @@
               <p class="eyebrow">CREATE</p>
               <h3>New Collection</h3>
             </div>
-            <span class="badge blue">DAI-001</span>
+            <span class="badge blue">DAI-002</span>
           </div>
 
           <div class="form-section">
@@ -135,11 +135,16 @@
           </div>
 
           <div class="form-section">
-            <h4>Purchase and reduction</h4>
-            <div class="form-grid three">
+            <h4>Purchase details</h4>
+            <div class="form-grid two">
               <label>Agreed purchase price (£)<input type="number" min="0" step="0.01" name="agreedPrice"></label>
-              <label>Final collection price (£)<input type="number" min="0" step="0.01" name="finalPrice"></label>
-              <label>Expected reduction (£)<input readonly name="calculatedReduction"></label>
+              <label>Is there a settlement on this car?
+                <select name="hasSettlement">
+                  <option value="">Select</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </label>
             </div>
           </div>
 

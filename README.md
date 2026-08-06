@@ -1,31 +1,21 @@
-# Delivery AI DAI-001
+# Delivery AI DAI-002
 
-First working standalone prototype for The Car Agent.
+## Changes
+- Removed Brakes working from the appraisal
+- Agreed Purchase Price remains in New Collection
+- Removed Final Collection Price from New Collection
+- Removed Expected Reduction from New Collection
+- Added Is there a settlement on this car? to New Collection
+- Expenses now includes Agreed Purchase Price
+- Expenses now includes Final Collection Price
+- Money Saved calculates automatically
+- Reports and Collector League use Money Saved for total and average reductions
 
-## Included
-- Sales AI-inspired navigation and visual layout
-- Command Centre
-- Collection diary
-- New collection creation
-- Collector clock-in / clock-out
-- Working hours per collector
-- Mileage and distance travelled
-- Travel expenses
-- Vehicle reduction and net saving calculations
-- Printable vehicle appraisal
-- Tyres, electrical, mechanical, diagnostic, bodywork and interior checks
-- Vehicle damage map
-- Collection history search
-- Monthly comparison reports
-- Collector reduction league
-- Collector management
-- Local browser storage
+## Replace your current files
+Replace index.html, script.js, style.css and README.md with these files.
 
-## Open
-Open `index.html` in a browser.
+Then run:
 
-## Data
-This version uses browser localStorage. Data remains on the same browser/device unless browser data is cleared.
-
-## Version
-DAI-001
+git add .
+git commit -m "DAI-002 Update pricing and appraisal"
+git push
