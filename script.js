@@ -14,6 +14,20 @@ function load(){
     loaded.collections=loaded.collections||[];
     loaded.savedAppraisals=loaded.savedAppraisals||[];
 
+    loaded.collections.forEach(j=>{
+      j.expenses=j.expenses||{train:0,taxi:0,bus:0,fuel:0,parking:0,tolls:0,other:0};
+      if(j.expensesSaved && !j.expenseHistory){
+        j.expenseHistory={
+          savedAt:j.expensesSavedAt||new Date().toISOString(),
+          agreedPrice:Number(j.agreedPrice||0),
+          finalPrice:Number(j.finalPrice||0),
+          moneySaved:Math.max(0,Number(j.agreedPrice||0)-Number(j.finalPrice||0)),
+          expenses:structuredClone(j.expenses),
+          total:Object.values(j.expenses).reduce((s,v)=>s+Number(v||0),0)
+        };
+      }
+    });
+
     // One-time migration of appraisal records saved by older Delivery AI versions.
     loaded.collections.forEach(j=>{
       if(j.appraisalComplete&&j.appraisal&&!loaded.savedAppraisals.some(a=>a.legacyCollectionId===j.id)){
@@ -30,8 +44,16 @@ function load(){
           collectionDate:j.collectionDate,
           collectionAddress:j.collectionAddress,
           destination:j.destination,
+          contactName:j.contactName||"",
+          contactPhone:j.contactPhone||"",
+          contactEmail:j.contactEmail||"",
+          preferredContact:j.preferredContact||"",
+          salesperson:j.salesperson||"",
+          collectionInstructions:j.collectionInstructions||"",
+          hasSettlement:j.hasSettlement||"",
           agreedPrice:j.agreedPrice,
           finalPrice:j.finalPrice,
+          vehicleJourney:structuredClone(j.vehicleJourney||null),
           appraisal:structuredClone(j.appraisal),
           testDrive:structuredClone(j.testDrive||null),
           timeline:structuredClone(j.timeline||[])
@@ -100,6 +122,9 @@ function captureLiveAppraisal(j){
     bodyDescription:$("bodyDescription")?.value||"",
     interiorDescription:$("interiorDescription")?.value||"",
     notes:$("appraisalNotes")?.value||"",
+    mileageVerified:$("mileageVerified")?.value||"",
+    mileageVerificationNote:$("mileageVerificationNote")?.value||"",
+    appraisalMileage:Number($("appraisalMileage")?.value||0),
     savedAt:new Date().toISOString()
   };
 
@@ -124,11 +149,16 @@ function createPermanentAppraisal(j,{forReview=false}={}){
     collectionDate:j.collectionDate,
     collectionAddress:j.collectionAddress,
     destination:j.destination,
+    contactName:j.contactName||"",
+    contactPhone:j.contactPhone||"",
+    contactEmail:j.contactEmail||"",
+    preferredContact:j.preferredContact||"",
+    salesperson:j.salesperson||"",
+    collectionInstructions:j.collectionInstructions||"",
+    hasSettlement:j.hasSettlement||"",
     agreedPrice:Number(j.agreedPrice||0),
     finalPrice:Number(j.finalPrice||0),
-    startMileage:Number(j.startMileage||0),
-    finishMileage:Number(j.finishMileage||0),
-    distanceTravelled:Number(j.distanceTravelled||0),
+    vehicleJourney:structuredClone(j.vehicleJourney||null),
     appraisal:structuredClone(captured.appraisal),
     testDrive:structuredClone(captured.testDrive),
     timeline:structuredClone(j.timeline||[]),
@@ -191,7 +221,7 @@ function renderCommand(){
   const exp=month.reduce((s,j)=>s+totalExpenses(j),0);
   const red=month.reduce((s,j)=>s+reduction(j),0);
   const hrs=month.reduce((s,j)=>s+hoursWorked(j),0);
-  const miles=month.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
+  const miles=month.reduce((s,j)=>s+Number(j.vehicleJourney?.distance||0),0);
   $("heroNetSaving").textContent=money(red-exp);
   const acceptedToday=state.collections.filter(j=>j.sellerAcceptedAt&&j.sellerAcceptedAt.slice(0,10)===today).length;
   const declinedToday=state.collections.filter(j=>j.sellerDeclinedAt&&j.sellerDeclinedAt.slice(0,10)===today).length;
@@ -203,10 +233,10 @@ function renderCommand(){
     metric("Seller Declined Today",declinedToday,"Offers declined today","warn"),
     metric("No Collection Trips",month.filter(j=>j.status==="No Collection").length,`${money(month.filter(j=>j.status==="No Collection").reduce((s,j)=>s+totalExpenses(j),0))} cost this month`,"warn"),
     metric("Collections this month",completed.length,"Delivered vehicles","good"),
-    metric("Travel costs this month",money(exp),`${completed.length?money(exp/completed.length):money(0)} average`,"warn"),
+    metric("Travel costs this month",money(exp),`${month.filter(j=>j.expensesSaved).length} expense records saved`,"warn"),
     metric("Reductions this month",money(red),`${completed.length?money(red/completed.length):money(0)} average`,"good"),
     metric("Collector hours",`${num(hrs)} hrs`,"Clocked working time","blue"),
-    metric("Distance travelled",`${num(miles,0)} mi`,"Completed journey mileage","blue"),
+    metric("Vehicle miles this month",`${num(miles,0)} mi`,"Start-to-end mileage from collected vehicles","blue"),
     metric("Net saving",money(red-exp),"Reduction less travel costs","good")
   ].join("");
   $("liveCollections").innerHTML=todayJobs.length?todayJobs.map(jobRow).join(""):`<p>No collections scheduled today.</p>`;
@@ -318,8 +348,52 @@ function renderDriver(){
   const j=state.collections.find(x=>x.id===sel.value);
   const review=getReviewAppraisal(j);
   if(!j){$("driverJobCard").innerHTML=`<div class="panel"><p>Select a collection to begin.</p></div>`;return}
+
+  const phone=(j.contactPhone||"").replace(/\s+/g,"");
+  const mapsQuery=encodeURIComponent(j.collectionAddress||"");
+  const smsHref=phone?`sms:${phone}`:"#";
+  const telHref=phone?`tel:${phone}`:"#";
+  const mailHref=j.contactEmail?`mailto:${j.contactEmail}`:"#";
+  const mapsHref=j.collectionAddress?`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`:"#";
+
   $("driverJobCard").innerHTML=`<div class="driver-card">
-    <div class="driver-card-top"><p class="eyebrow">ACTIVE COLLECTION</p><h3>${j.registration} · ${j.make||""} ${j.model||""}</h3><p>${j.collectionAddress||"Collection address not entered"} → ${j.destination||"Destination not entered"}</p></div>
+    <div class="driver-card-top">
+      <p class="eyebrow">ACTIVE COLLECTION</p>
+      <h3>${j.registration} · ${j.make||""} ${j.model||""}</h3>
+      <p>${dateOnly(j.collectionDate)} ${j.collectionTime||""} · ${collectorName(j.collector)}</p>
+    </div>
+
+    <div class="driver-contact-grid">
+      <div class="driver-info-card">
+        <p class="eyebrow">SELLER / CUSTOMER</p>
+        <h3>${j.contactName||"Name not entered"}</h3>
+        <p><strong>Telephone:</strong> ${j.contactPhone||"—"}</p>
+        <p><strong>Email:</strong> ${j.contactEmail||"—"}</p>
+        <p><strong>Preferred contact:</strong> ${j.preferredContact||"—"}</p>
+        <div class="contact-actions">
+          <a class="primary-btn ${phone?"":"disabled-link"}" href="${telHref}">📞 Call</a>
+          <a class="secondary-btn ${phone?"":"disabled-link"}" href="${smsHref}">💬 Text</a>
+          <a class="secondary-btn ${j.contactEmail?"":"disabled-link"}" href="${mailHref}">✉️ Email</a>
+        </div>
+      </div>
+
+      <div class="driver-info-card">
+        <p class="eyebrow">COLLECTION ADDRESS</p>
+        <h3>${j.collectionAddress||"Address not entered"}</h3>
+        <p><strong>Destination:</strong> ${j.destination||"—"}</p>
+        <p><strong>Instructions:</strong> ${j.collectionInstructions||j.journeyNotes||"None entered"}</p>
+        <a class="primary-btn ${j.collectionAddress?"":"disabled-link"}" target="_blank" rel="noopener" href="${mapsHref}">🧭 Navigate</a>
+      </div>
+
+      <div class="driver-info-card">
+        <p class="eyebrow">PURCHASE DETAILS</p>
+        <h3>${money(j.agreedPrice||0)}</h3>
+        <p><strong>Settlement:</strong> ${j.hasSettlement||"Not recorded"}</p>
+        <p><strong>Salesperson / buyer:</strong> ${j.salesperson||"—"}</p>
+        <p><strong>Status:</strong> ${j.status}</p>
+      </div>
+    </div>
+
     <div class="driver-details">
       <div class="detail-card"><span>Status</span><strong>${j.status}</strong></div>
       <div class="detail-card"><span>Clocked hours</span><strong>${num(hoursWorked(j))} hrs</strong></div>
@@ -338,23 +412,47 @@ function renderDriver(){
         <div><span>Recommended reduction</span><strong>${review.managerRecommendedReduction!=null?money(review.managerRecommendedReduction):"Awaiting review"}</strong></div>
       </div>
     </div>
-    ${j.status==="Offer Sent to Collector"||j.status==="Seller Declined"?`<div class="seller-response-panel"><button class="primary-btn" onclick="sellerAccepted('${j.id}')">Seller Accepted</button><button class="secondary-btn" onclick="sellerDeclined('${j.id}')">Seller Declined</button><button class="secondary-btn" onclick="requestRevisedOffer('${j.id}')">Request Revised Offer</button></div>`:""}
+
+    ${j.status==="Offer Sent to Collector"||j.status==="Seller Declined"?`<div class="seller-response-panel">
+      <button class="primary-btn" onclick="sellerAccepted('${j.id}')">Seller Accepted</button>
+      <button class="secondary-btn" onclick="sellerDeclined('${j.id}')">Seller Declined</button>
+      <button class="secondary-btn" onclick="requestRevisedOffer('${j.id}')">Request Revised Offer</button>
+    </div>`:""}
+
     <div class="driver-actions">
       <button class="action-start" onclick="clockIn('${j.id}')">Clock In</button>
       <button class="action-step" onclick="setStatus('${j.id}','At Collection')">Arrived</button>
       <button class="action-step" onclick="setStatus('${j.id}','Appraising')">Start Appraisal</button>
-      <button class="action-step" onclick="setStatus('${j.id}','Collected')">Vehicle Collected</button>
-      <button class="action-step" onclick="setStatus('${j.id}','Delivered')">Delivered</button>
+      <button class="action-step" onclick="recordVehicleCollected('${j.id}')">Vehicle Collected</button>
+      <button class="action-step" onclick="recordVehicleDelivered('${j.id}')">Delivered</button>
       <button class="action-step" onclick="markNoCollection('${j.id}')">No Collection</button>
       <button class="action-stop" onclick="clockOut('${j.id}')">Clock Out</button>
     </div>
-    <div class="panel" style="margin:0;border:0;box-shadow:none">
-      <div class="form-grid three">
-        <label>Starting mileage<input id="startMiles" type="number" value="${j.startMileage||""}"></label>
-        <label>Finishing mileage<input id="finishMiles" type="number" value="${j.finishMileage||""}"></label>
-        <label>Distance travelled<input id="distanceMiles" type="number" value="${j.distanceTravelled||""}"></label>
+
+    <div class="panel vehicle-mileage-panel" style="margin:0 18px 18px;box-shadow:none">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">VEHICLE JOURNEY</p>
+          <h3>Collected Vehicle Mileage</h3>
+        </div>
+        <span class="badge blue">${Number(j.vehicleJourney?.distance||0).toLocaleString("en-GB")} miles</span>
       </div>
-      <button class="primary-btn" onclick="saveMileage('${j.id}')">Save Journey Mileage</button>
+      <div class="form-grid three">
+        <label>Start mileage
+          <input id="vehicleStartMileage" type="number" min="0" value="${j.vehicleJourney?.startMileage??""}" placeholder="Enter when vehicle is collected">
+        </label>
+        <label>End mileage
+          <input id="vehicleEndMileage" type="number" min="0" value="${j.vehicleJourney?.endMileage??""}" placeholder="Enter when vehicle is delivered">
+        </label>
+        <label>Distance travelled
+          <input readonly value="${Number(j.vehicleJourney?.distance||0).toLocaleString("en-GB")} miles">
+        </label>
+      </div>
+      <div class="mileage-timestamps">
+        <span>Collected: <strong>${dt(j.vehicleJourney?.collectedAt)}</strong></span>
+        <span>Delivered: <strong>${dt(j.vehicleJourney?.deliveredAt)}</strong></span>
+      </div>
+      <button class="primary-btn" onclick="saveVehicleJourney('${j.id}')">Save Vehicle Journey</button>
     </div>
   </div>`;
 }
@@ -381,35 +479,123 @@ window.deleteCollection=id=>{
   state.collections=state.collections.filter(x=>x.id!==id);
   save();renderAll();toast("Collection deleted");
 };
-window.saveMileage=id=>{
+
+function updateArchivedVehicleJourney(j){
+  (state.savedAppraisals||[]).filter(a=>a.sourceCollectionId===j.id).forEach(a=>{
+    a.vehicleJourney=structuredClone(j.vehicleJourney||null);
+    a.timeline=structuredClone(j.timeline||[]);
+  });
+  if(j.reviewAppraisalSnapshot){
+    j.reviewAppraisalSnapshot.vehicleJourney=structuredClone(j.vehicleJourney||null);
+    j.reviewAppraisalSnapshot.timeline=structuredClone(j.timeline||[]);
+  }
+}
+
+function persistVehicleJourney(j,start,end,{logStart=false,logEnd=false}={}){
+  j.vehicleJourney=j.vehicleJourney||{};
+  j.timeline=j.timeline||[];
+
+  const oldStart=Number(j.vehicleJourney.startMileage||0);
+  const oldEnd=Number(j.vehicleJourney.endMileage||0);
+
+  if(start>0){
+    j.vehicleJourney.startMileage=start;
+    if(logStart && (!oldStart || oldStart!==start)){
+      j.timeline.push({
+        time:new Date().toISOString(),
+        text:`Vehicle Journey Start Mileage Saved: ${start.toLocaleString("en-GB")} miles`
+      });
+    }
+  }
+
+  if(end>0){
+    if(!j.vehicleJourney.startMileage) throw new Error("START_REQUIRED");
+    if(end<Number(j.vehicleJourney.startMileage)) throw new Error("END_LOWER");
+    j.vehicleJourney.endMileage=end;
+    j.vehicleJourney.distance=end-Number(j.vehicleJourney.startMileage);
+    if(logEnd && (!oldEnd || oldEnd!==end)){
+      j.timeline.push({
+        time:new Date().toISOString(),
+        text:`Vehicle Journey End Mileage Saved: ${end.toLocaleString("en-GB")} miles — Distance: ${j.vehicleJourney.distance.toLocaleString("en-GB")} miles`
+      });
+    }
+  }else if(j.vehicleJourney.startMileage && j.vehicleJourney.endMileage){
+    j.vehicleJourney.distance=Number(j.vehicleJourney.endMileage)-Number(j.vehicleJourney.startMileage);
+  }
+
+  updateArchivedVehicleJourney(j);
+}
+
+window.saveVehicleJourney=id=>{
   const j=state.collections.find(x=>x.id===id);
   if(!j)return;
 
-  j.startMileage=Number($("startMiles").value||0);
-  j.finishMileage=Number($("finishMiles").value||0);
-  j.distanceTravelled=Number($("distanceMiles").value||Math.max(0,j.finishMileage-j.startMileage));
+  const start=Number($("vehicleStartMileage")?.value||0);
+  const end=Number($("vehicleEndMileage")?.value||0);
 
-  const recordedAt=new Date().toISOString();
-  j.mileageRecordedAt=recordedAt;
-  j.timeline=j.timeline||[];
-  j.timeline.push({
-    time:recordedAt,
-    text:`Vehicle Mileage Recorded — Start: ${j.startMileage.toLocaleString("en-GB")} miles · End: ${j.finishMileage.toLocaleString("en-GB")} miles · Distance: ${j.distanceTravelled.toLocaleString("en-GB")} miles`
-  });
+  if(!start && !end){toast("Enter start or end mileage first");return}
 
-  // Keep the permanent review archive in sync if an appraisal has already been saved.
-  const saved=getReviewSnapshot(j);
-  if(saved){
-    saved.startMileage=j.startMileage;
-    saved.finishMileage=j.finishMileage;
-    saved.distanceTravelled=j.distanceTravelled;
-    saved.timeline=structuredClone(j.timeline);
-    j.reviewAppraisalSnapshot=structuredClone(saved);
+  try{
+    persistVehicleJourney(j,start,end,{logStart:start>0,logEnd:end>0});
+  }catch(err){
+    if(err.message==="START_REQUIRED"){toast("Enter the start mileage before the end mileage");$("vehicleStartMileage")?.focus();return}
+    if(err.message==="END_LOWER"){toast("End mileage cannot be lower than start mileage");$("vehicleEndMileage")?.focus();return}
+    throw err;
   }
 
-  save();
-  renderAll();
-  toast("Mileage saved to collection timeline");
+  save();renderAll();toast("Vehicle journey mileage saved");
+};
+
+window.recordVehicleCollected=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+
+  const start=Number($("vehicleStartMileage")?.value||j.vehicleJourney?.startMileage||0);
+  if(!start){toast("Enter the vehicle start mileage before marking it collected");$("vehicleStartMileage")?.focus();return}
+
+  persistVehicleJourney(j,start,Number($("vehicleEndMileage")?.value||0),{logStart:true,logEnd:false});
+  j.vehicleJourney.collectedAt=j.vehicleJourney.collectedAt||new Date().toISOString();
+  j.status="Collected";
+  j.timeline=j.timeline||[];
+
+  if(!j.timeline.some(t=>t.text.startsWith("Vehicle Collected — Start Mileage:"))){
+    j.timeline.push({
+      time:j.vehicleJourney.collectedAt,
+      text:`Vehicle Collected — Start Mileage: ${start.toLocaleString("en-GB")} miles`
+    });
+  }
+
+  updateArchivedVehicleJourney(j);
+  save();renderAll();toast("Vehicle collected — start mileage saved");
+};
+
+window.recordVehicleDelivered=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+
+  const start=Number($("vehicleStartMileage")?.value||j.vehicleJourney?.startMileage||0);
+  const end=Number($("vehicleEndMileage")?.value||0);
+
+  if(!start){toast("Record the vehicle start mileage first");$("vehicleStartMileage")?.focus();return}
+  if(!end){toast("Enter the vehicle end mileage before marking it delivered");$("vehicleEndMileage")?.focus();return}
+
+  try{
+    persistVehicleJourney(j,start,end,{logStart:false,logEnd:true});
+  }catch(err){
+    if(err.message==="END_LOWER"){toast("End mileage cannot be lower than start mileage");$("vehicleEndMileage")?.focus();return}
+    throw err;
+  }
+
+  j.vehicleJourney.deliveredAt=new Date().toISOString();
+  j.status="Delivered";
+  j.timeline=j.timeline||[];
+  j.timeline.push({
+    time:j.vehicleJourney.deliveredAt,
+    text:`Vehicle Delivered — End Mileage: ${end.toLocaleString("en-GB")} miles — Journey Distance: ${j.vehicleJourney.distance.toLocaleString("en-GB")} miles`
+  });
+
+  updateArchivedVehicleJourney(j);
+  save();renderAll();toast("Vehicle delivered — end mileage and journey distance saved");
 };
 
 const checkItems=[
@@ -440,6 +626,19 @@ function renderAppraisals(){
     <div class="form-section test-drive-section"><div class="panel-heading"><div><p class="eyebrow">ROAD TEST</p><h4>Test Drive</h4></div><span class="badge blue">${td?.end?"Completed":td?.start?"In progress":"Not started"}</span></div><div class="form-grid three"><label>Start mileage<input id="testDriveStartMileage" type="number" value="${td?.startMileage||""}"></label><label>Finish mileage<input id="testDriveEndMileage" type="number" value="${td?.endMileage||""}"></label><label>Distance<input id="testDriveDistance" readonly value="${td?.distance||0} miles"></label></div><div class="form-actions"><button type="button" class="secondary-btn" onclick="startTestDrive('${j.id}')">Start Test Drive</button><button type="button" class="primary-btn" onclick="finishTestDrive('${j.id}')">Finish Test Drive</button></div><div class="test-drive-meta"><span>Started: <strong>${dt(td?.start)}</strong></span><span>Finished: <strong>${dt(td?.end)}</strong></span><span>Duration: <strong>${formatDuration(td?.durationMinutes||0)}</strong></span></div><div class="check-grid">${testDriveItems.map(item=>`<div class="check-row"><span>${item}</span><select data-test-check="${item}"><option></option><option ${td?.checks?.[item]==="Good"?"selected":""}>Good</option><option ${td?.checks?.[item]==="Fault"?"selected":""}>Fault</option><option ${td?.checks?.[item]==="Not fitted"?"selected":""}>Not fitted</option><option ${td?.checks?.[item]==="Not checked"?"selected":""}>Not checked</option></select></div>`).join("")}</div><label>Test drive notes<textarea id="testDriveNotes">${td?.notes||""}</textarea></label></div>
     <div class="form-section"><h4>${j.registration} · ${j.make||""} ${j.model||""}</h4>
       <div class="form-grid three">
+        <label>Mileage verified against dashboard?
+          <select id="mileageVerified">
+            <option value="">Select</option>
+            <option value="Yes" ${a.mileageVerified==="Yes"?"selected":""}>Yes</option>
+            <option value="No" ${a.mileageVerified==="No"?"selected":""}>No</option>
+          </select>
+        </label>
+        <label>Verification reason / note
+          <input id="mileageVerificationNote" value="${a.mileageVerificationNote||""}" placeholder="Required if mileage cannot be verified">
+        </label>
+        <label>Dashboard mileage at appraisal
+          <input id="appraisalMileage" type="number" min="0" value="${a.appraisalMileage||j.vehicleMileage||""}">
+        </label>
         <label>NSF tyre tread (mm)<input data-tyre="NSF" type="number" step=".1" value="${a.tyres?.NSF||""}"></label>
         <label>NSR tyre tread (mm)<input data-tyre="NSR" type="number" step=".1" value="${a.tyres?.NSR||""}"></label>
         <label>OSF tyre tread (mm)<input data-tyre="OSF" type="number" step=".1" value="${a.tyres?.OSF||""}"></label>
@@ -754,6 +953,14 @@ window.printAppraisal=()=>{
 };
 
 
+function printStatusClass(value){
+  if(value==="Good")return "print-good";
+  if(value==="Fault")return "print-fault";
+  if(value==="Not checked")return "print-amber";
+  if(value==="Not fitted")return "print-white";
+  return "";
+}
+
 function appraisalPrintHtml(j){
   const a=j.appraisal||{};
   const checks=Object.entries(a.checks||{});
@@ -773,14 +980,25 @@ function appraisalPrintHtml(j){
     </div>
 
     <div class="print-summary-grid">
+      <div><span>Seller / customer</span><strong>${j.contactName||"—"}</strong></div>
+      <div><span>Telephone</span><strong>${j.contactPhone||"—"}</strong></div>
       <div><span>Collection address</span><strong>${j.collectionAddress||"—"}</strong></div>
       <div><span>Destination</span><strong>${j.destination||"—"}</strong></div>
       <div><span>Vehicle mileage</span><strong>${j.vehicleMileage||"—"}</strong></div>
-      <div><span>Collection start mileage</span><strong>${Number(j.startMileage||0).toLocaleString("en-GB")} miles</strong></div>
-      <div><span>Collection end mileage</span><strong>${Number(j.finishMileage||0).toLocaleString("en-GB")} miles</strong></div>
-      <div><span>Miles travelled</span><strong>${Number(j.distanceTravelled||0).toLocaleString("en-GB")} miles</strong></div>
       <div><span>Appraisal saved</span><strong>${dt(j.savedAt||j.appraisalSavedAt||a.savedAt)}</strong></div>
     </div>
+
+    <h3>Vehicle Mileage & Journey</h3>
+    <table>
+      <tbody>
+        <tr><th>Mileage verified</th><td>${a.mileageVerified||"Not recorded"}</td></tr>
+        <tr><th>Verification note</th><td>${a.mileageVerificationNote||"—"}</td></tr>
+        <tr><th>Dashboard mileage at appraisal</th><td>${a.appraisalMileage?Number(a.appraisalMileage).toLocaleString("en-GB")+" miles":"—"}</td></tr>
+        <tr><th>Collection start mileage</th><td>${j.vehicleJourney?.startMileage?Number(j.vehicleJourney.startMileage).toLocaleString("en-GB")+" miles":"—"}</td></tr>
+        <tr><th>Delivery end mileage</th><td>${j.vehicleJourney?.endMileage?Number(j.vehicleJourney.endMileage).toLocaleString("en-GB")+" miles":"—"}</td></tr>
+        <tr><th>Vehicle journey distance</th><td>${j.vehicleJourney?.distance!=null?Number(j.vehicleJourney.distance).toLocaleString("en-GB")+" miles":"—"}</td></tr>
+      </tbody>
+    </table>
 
     <h3>Tyre tread depths</h3>
     <table><thead><tr><th>NSF</th><th>NSR</th><th>OSF</th><th>OSR</th></tr></thead>
@@ -788,8 +1006,8 @@ function appraisalPrintHtml(j){
     </table>
 
     <h3>Equipment and vehicle checks</h3>
-    <table><thead><tr><th>Check</th><th>Result</th></tr></thead>
-      <tbody>${checks.map(([name,value])=>`<tr><td>${name}</td><td>${value||"Not recorded"}</td></tr>`).join("")}</tbody>
+    <table class="print-status-table"><thead><tr><th>Check</th><th>Result</th></tr></thead>
+      <tbody>${checks.map(([name,value])=>`<tr class="${printStatusClass(value)}"><td>${name}</td><td><strong>${value||"Not recorded"}</strong></td></tr>`).join("")}</tbody>
     </table>
 
     <h3>Selected damage areas</h3>
@@ -807,7 +1025,19 @@ function appraisalPrintHtml(j){
     <h3>Additional notes</h3>
     <p>${a.notes||"No additional notes"}</p>
 
-    <h3>Test Drive</h3><table><tbody><tr><th>Started</th><td>${dt(j.testDrive?.start)}</td></tr><tr><th>Finished</th><td>${dt(j.testDrive?.end)}</td></tr><tr><th>Duration</th><td>${formatDuration(j.testDrive?.durationMinutes||0)}</td></tr><tr><th>Distance</th><td>${j.testDrive?.distance||0} miles</td></tr><tr><th>Notes</th><td>${j.testDrive?.notes||"None recorded"}</td></tr></tbody></table><h3>Journey Timeline</h3><table><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>${(j.timeline||[]).map(t=>`<tr><td>${dt(t.time)}</td><td>${t.text}</td></tr>`).join("")}</tbody></table><h3>Sales Manager Offer</h3>
+    <h3>Test Drive</h3>
+    <table><tbody>
+      <tr><th>Started</th><td>${dt(j.testDrive?.start)}</td></tr>
+      <tr><th>Finished</th><td>${dt(j.testDrive?.end)}</td></tr>
+      <tr><th>Duration</th><td>${formatDuration(j.testDrive?.durationMinutes||0)}</td></tr>
+      <tr><th>Distance</th><td>${j.testDrive?.distance||0} miles</td></tr>
+      <tr><th>Notes</th><td>${j.testDrive?.notes||"None recorded"}</td></tr>
+    </tbody></table>
+    ${Object.keys(j.testDrive?.checks||{}).length?`<table class="print-status-table" style="margin-top:10px">
+      <thead><tr><th>Test-drive check</th><th>Result</th></tr></thead>
+      <tbody>${Object.entries(j.testDrive.checks).map(([name,value])=>`<tr class="${printStatusClass(value)}"><td>${name}</td><td><strong>${value||"Not recorded"}</strong></td></tr>`).join("")}</tbody>
+    </table>`:""}
+    <h3>Journey Timeline</h3><table><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>${(j.timeline||[]).map(t=>`<tr><td>${dt(t.time)}</td><td>${t.text}</td></tr>`).join("")}</tbody></table><h3>Sales Manager Offer</h3>
     <table>
       <tbody>
         <tr><th>Agreed purchase price</th><td>${money(j.agreedPrice||0)}</td></tr>
@@ -869,7 +1099,13 @@ window.printSavedAppraisal=id=>{
   const printWindow=window.open("","_blank");
   printWindow.document.write(`<!DOCTYPE html><html><head><title>${a.registration} Appraisal</title>
     <link rel="stylesheet" href="style.css">
-    <style>body{padding:30px;background:#fff}.saved-appraisal-print{max-width:900px;margin:auto}.saved-print-title{display:flex;justify-content:space-between;border-bottom:2px solid #172033;padding-bottom:18px;margin-bottom:20px}.print-summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}.print-summary-grid div{border:1px solid #ddd;padding:12px;border-radius:8px}.print-summary-grid span{display:block;color:#666;font-size:12px}.print-summary-grid strong{display:block;margin-top:5px}h3{margin-top:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:9px;text-align:left}</style>
+    <style>body{padding:30px;background:#fff}.saved-appraisal-print{max-width:900px;margin:auto}.saved-print-title{display:flex;justify-content:space-between;border-bottom:2px solid #172033;padding-bottom:18px;margin-bottom:20px}.print-summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}.print-summary-grid div{border:1px solid #ddd;padding:12px;border-radius:8px}.print-summary-grid span{display:block;color:#666;font-size:12px}.print-summary-grid strong{display:block;margin-top:5px}h3{margin-top:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:9px;text-align:left}
+      .print-good td{background:#dff5e9!important;color:#155f3d!important}
+      .print-fault td{background:#fde3e6!important;color:#8d1e2d!important}
+      .print-amber td{background:#fff0c7!important;color:#765500!important}
+      .print-white td{background:#fff!important;color:#172033!important}
+      *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    </style>
   </head><body>${appraisalPrintHtml(a)}</body></html>`);
   printWindow.document.close();
   printWindow.focus();
@@ -885,7 +1121,9 @@ window.printReports=()=>{
   window.print();
 };
 function renderExpenses(){
-  $("expenseList").innerHTML=state.collections.length?state.collections.map(j=>`<div class="panel" style="box-shadow:none">
+  const outstanding=state.collections.filter(j=>!j.expensesSaved);
+
+  $("expenseList").innerHTML=outstanding.length?outstanding.map(j=>`<div class="panel" style="box-shadow:none">
     <div class="panel-heading">
       <div>
         <h3>${j.registration} · ${collectorName(j.collector)}</h3>
@@ -916,8 +1154,8 @@ function renderExpenses(){
       </div>
     </div>
 
-    <button class="primary-btn" onclick="saveExpenses('${j.id}')">Save Expenses & Prices</button>
-  </div>`).join(""):"<p>No collections available.</p>";
+    <button class="primary-btn" onclick="saveExpenses('${j.id}')">Save Expenses & Move to History</button>
+  </div>`).join(""):`<div class="empty-state"><h3>All expenses saved</h3><p>Saved expense records are available in Collection History.</p></div>`;
 }
 
 window.previewSaving=id=>{
@@ -930,6 +1168,7 @@ window.previewSaving=id=>{
 
 window.saveExpenses=id=>{
   const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
   j.expenses=j.expenses||{};
 
   document.querySelectorAll(`[data-purchase-job="${id}"]`).forEach(x=>{
@@ -940,17 +1179,92 @@ window.saveExpenses=id=>{
     j.expenses[x.dataset.expenseKey]=Number(x.value||0);
   });
 
+  j.expensesSaved=true;
+  j.expensesSavedAt=new Date().toISOString();
+  j.expenseHistory={
+    savedAt:j.expensesSavedAt,
+    agreedPrice:Number(j.agreedPrice||0),
+    finalPrice:Number(j.finalPrice||0),
+    moneySaved:reduction(j),
+    expenses:structuredClone(j.expenses),
+    total:totalExpenses(j)
+  };
+
+  j.timeline=j.timeline||[];
+  j.timeline.push({
+    time:j.expensesSavedAt,
+    text:`Expenses Saved — Total Travel Cost: ${money(totalExpenses(j))}`
+  });
+
+  // Keep permanent appraisal archive in sync with the final job costs.
+  (state.savedAppraisals||[]).filter(a=>a.sourceCollectionId===j.id).forEach(a=>{
+    a.expenseHistory=structuredClone(j.expenseHistory);
+    a.finalPrice=j.finalPrice;
+    a.timeline=structuredClone(j.timeline);
+  });
+
   save();
   renderAll();
-  toast("Expenses, prices and saving saved");
+  toast("Expenses saved and moved to Collection History");
 };
 
 function renderHistory(){
   const q=($("historySearch").value||"").toLowerCase();
-  const jobs=state.collections.filter(j=>[j.registration,collectorName(j.collector),j.destination,j.collectionAddress].join(" ").toLowerCase().includes(q));
-  $("historyList").innerHTML=`<div class="table-wrap"><table><thead><tr><th>Date</th><th>Registration</th><th>Collector</th><th>Status</th><th>Miles</th><th>Hours</th><th>Costs</th><th>Reduction</th></tr></thead><tbody>${jobs.map(j=>`<tr><td>${dateOnly(j.collectionDate)}</td><td><strong>${j.registration}</strong></td><td>${collectorName(j.collector)}</td><td>${j.status}</td><td>${num(j.distanceTravelled||0,0)}</td><td>${num(hoursWorked(j))}</td><td>${money(totalExpenses(j))}</td><td>${money(reduction(j))}</td></tr>`).join("")}</tbody></table></div>`;
+  const jobs=state.collections
+    .filter(j=>[j.registration,collectorName(j.collector),j.destination,j.collectionAddress,j.contactName].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>new Date(b.collectionDate||b.createdAt)-new Date(a.collectionDate||a.createdAt));
+
+  $("historyList").innerHTML=jobs.length?jobs.map(j=>{
+    const e=j.expenseHistory?.expenses||j.expenses||{};
+    const hasSavedExpenses=!!j.expensesSaved;
+    return `<div class="history-job-card">
+      <div class="history-job-summary">
+        <div>
+          <p class="eyebrow">${dateOnly(j.collectionDate)}</p>
+          <h3>${j.registration||"No registration"} · ${j.make||""} ${j.model||""}</h3>
+          <p>${collectorName(j.collector)} · ${j.status||"Scheduled"} · ${j.contactName||"No customer name"}</p>
+        </div>
+        <div class="history-summary-figures">
+          <div><span>Vehicle Miles</span><strong>${Number(j.vehicleJourney?.distance||0).toLocaleString("en-GB")} mi</strong></div>
+          <div><span>Travel Cost</span><strong>${money(totalExpenses(j))}</strong></div>
+          <div><span>Reduction</span><strong>${money(reduction(j))}</strong></div>
+        </div>
+      </div>
+
+      <div class="history-detail-grid">
+        <div><span>Start Mileage</span><strong>${j.vehicleJourney?.startMileage?Number(j.vehicleJourney.startMileage).toLocaleString("en-GB"):"—"}</strong></div>
+        <div><span>End Mileage</span><strong>${j.vehicleJourney?.endMileage?Number(j.vehicleJourney.endMileage).toLocaleString("en-GB"):"—"}</strong></div>
+        <div><span>Hours</span><strong>${num(hoursWorked(j))} hrs</strong></div>
+        <div><span>Expense Status</span><strong>${hasSavedExpenses?"Saved "+dt(j.expensesSavedAt):"Outstanding"}</strong></div>
+      </div>
+
+      ${hasSavedExpenses?`
+      <div class="saved-expense-history">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">SAVED EXPENSE RECORD</p>
+            <h4>Expense Breakdown</h4>
+          </div>
+          <span class="badge green">${money(totalExpenses(j))} total</span>
+        </div>
+        <div class="expense-history-grid">
+          <div><span>Train</span><strong>${money(e.train||0)}</strong></div>
+          <div><span>Taxi</span><strong>${money(e.taxi||0)}</strong></div>
+          <div><span>Bus</span><strong>${money(e.bus||0)}</strong></div>
+          <div><span>Fuel</span><strong>${money(e.fuel||0)}</strong></div>
+          <div><span>Parking</span><strong>${money(e.parking||0)}</strong></div>
+          <div><span>Tolls</span><strong>${money(e.tolls||0)}</strong></div>
+          <div><span>Other</span><strong>${money(e.other||0)}</strong></div>
+          <div><span>Agreed Price</span><strong>${money(j.expenseHistory?.agreedPrice||j.agreedPrice||0)}</strong></div>
+          <div><span>Final Price</span><strong>${money(j.expenseHistory?.finalPrice||j.finalPrice||0)}</strong></div>
+          <div><span>Money Saved</span><strong>${money(j.expenseHistory?.moneySaved||reduction(j))}</strong></div>
+        </div>
+      </div>`:""}
+
+      ${j.noCollectionReason?`<div class="history-note"><strong>No Collection Reason:</strong> ${j.noCollectionReason}</div>`:""}
+    </div>`;
+  }).join(""):`<p>No collection history found.</p>`;
 }
-$("historySearch").oninput=renderHistory;
 
 function monthStats(m){
   const jobs=state.collections.filter(j=>monthKey(j.collectionDate||j.createdAt)===m);
@@ -964,6 +1278,7 @@ function monthStats(m){
   });
 
   const noCollections=jobs.filter(j=>j.status==="No Collection");
+  const vehicleMiles=jobs.reduce((s,j)=>s+Number(j.vehicleJourney?.distance||0),0);
   const miles=jobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
   const hours=jobs.reduce((s,j)=>s+hoursWorked(j),0);
   const cost=Object.values(expenseTotals).reduce((s,v)=>s+v,0);
@@ -975,6 +1290,7 @@ function monthStats(m){
     jobs:collectionCount,
     noCollections:noCollections.length,
     noCollectionCost,
+    vehicleMiles,
     miles,
     hours,
     cost,
@@ -1021,7 +1337,8 @@ function renderReports(){
   $("reportMetrics").innerHTML=[
     metric("Cars collected",a.jobs,`${a.jobs-b.jobs>=0?"+":""}${a.jobs-b.jobs} vs comparison`),
     metric("No collections",a.noCollections,`${money(a.noCollectionCost)} costs incurred`,"warn"),
-    metric("Miles travelled",`${num(a.miles,0)} mi`,`${num(a.avgMiles,0)} miles per collection`),
+    metric("Vehicle miles driven",`${num(a.vehicleMiles,0)} mi`,"Collected-car journey mileage","blue"),
+    metric("Vehicle miles driven",`${num(a.vehicleMiles,0)} mi`,`${a.jobs?num(a.vehicleMiles/a.jobs,0):0} miles per collected vehicle`),
     metric("Total travel cost",money(a.cost),`${money(a.avgCost)} per collection`,"warn"),
     metric("Average travel cost",money(a.avgCost),"Total travel cost ÷ collections","blue"),
     metric("Hours worked",`${num(a.hours)} hrs`,`${num(a.avgHours)} hrs per collection`),
@@ -1056,6 +1373,7 @@ function renderReports(){
     ["Cars collected",a.jobs,b.jobs,"count"],
     ["No collections",a.noCollections,b.noCollections,"count"],
     ["No collection costs",a.noCollectionCost,b.noCollectionCost,"money"],
+    ["Vehicle miles driven",a.vehicleMiles,b.vehicleMiles,"miles"],
     ["Miles travelled",a.miles,b.miles,"miles"],
     ["Average miles per collection",a.avgMiles,b.avgMiles,"miles"],
     ["Hours worked",a.hours,b.hours,"hours"],
@@ -1082,6 +1400,7 @@ function renderReports(){
   const collectorRows=state.collectors.map(c=>{
     const jobs=state.collections.filter(j=>j.collector===c.id&&monthKey(j.collectionDate||j.createdAt)===monthA);
     const delivered=jobs.filter(j=>j.status==="Delivered").length;
+    const vehicleMiles=jobs.reduce((s,j)=>s+Number(j.vehicleJourney?.distance||0),0);
     const miles=jobs.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
     const travel=jobs.reduce((s,j)=>s+totalExpenses(j),0);
     const fuel=jobs.reduce((s,j)=>s+Number(j.expenses?.fuel||0),0);
@@ -1091,6 +1410,7 @@ function renderReports(){
     return {
       name:c.name,
       cars:delivered,
+      vehicleMiles,
       miles,
       fuel,
       travel,
@@ -1102,10 +1422,11 @@ function renderReports(){
   }).sort((x,y)=>y.cars-x.cars);
 
   $("collectorCostTable").innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>Collector</th><th>Cars</th><th>Miles</th><th>Miles/Collection</th><th>Fuel</th><th>Travel Cost</th><th>Cost/Collection</th><th>Hours</th><th>Net Saving</th></tr></thead>
+    <thead><tr><th>Collector</th><th>Cars</th><th>Vehicle Miles</th><th>Travel Miles</th><th>Miles/Collection</th><th>Fuel</th><th>Travel Cost</th><th>Cost/Collection</th><th>Hours</th><th>Net Saving</th></tr></thead>
     <tbody>${collectorRows.map(r=>`<tr>
       <td><strong>${r.name}</strong></td>
       <td>${r.cars}</td>
+      <td>${num(r.vehicleMiles,0)} mi</td>
       <td>${num(r.miles,0)} mi</td>
       <td>${num(r.avgMiles,0)} mi</td>
       <td>${money(r.fuel)}</td>

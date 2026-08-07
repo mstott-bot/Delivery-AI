@@ -99,3 +99,42 @@ tfoot th{border-top:2px solid var(--line);background:#f7f9fc}
 .saved-record-banner h3{margin:4px 0}.saved-record-banner p{margin:4px 0;color:var(--muted)}
 .saved-record-banner + .saved-appraisal-print{border:1px solid var(--line);border-radius:14px;padding:20px}
 @media(max-width:700px){.saved-record-banner{flex-direction:column;align-items:flex-start}}
+
+.vehicle-mileage-panel{background:#f8fbff;border:1px solid #d7e6f7!important}
+.mileage-timestamps{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;color:var(--muted);font-size:13px}
+
+.driver-contact-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:18px}
+.driver-info-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:#fff}
+.driver-info-card h3{margin:4px 0 10px;white-space:pre-line}
+.driver-info-card p{margin:6px 0;color:var(--muted)}
+.contact-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.contact-actions a,.driver-info-card>a{display:inline-flex;text-decoration:none;align-items:center;justify-content:center}
+.disabled-link{opacity:.45;pointer-events:none}
+.print-status-table .print-good td,.print-good td{background:#dff5e9!important;color:#155f3d!important}
+.print-status-table .print-fault td,.print-fault td{background:#fde3e6!important;color:#8d1e2d!important}
+.print-status-table .print-amber td,.print-amber td{background:#fff0c7!important;color:#765500!important}
+.print-status-table .print-white td,.print-white td{background:#fff!important;color:#172033!important}
+@media(max-width:900px){.driver-contact-grid{grid-template-columns:1fr}}
+@media print{
+  .print-good td{background:#dff5e9!important;color:#155f3d!important}
+  .print-fault td{background:#fde3e6!important;color:#8d1e2d!important}
+  .print-amber td{background:#fff0c7!important;color:#765500!important}
+  .print-white td{background:#fff!important;color:#172033!important}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+}
+
+.history-job-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
+.history-job-summary{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}
+.history-job-summary h3{margin:4px 0}.history-job-summary p{margin:4px 0;color:var(--muted)}
+.history-summary-figures{display:flex;gap:10px;flex-wrap:wrap}
+.history-summary-figures div,.history-detail-grid div,.expense-history-grid div{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:110px}
+.history-summary-figures span,.history-detail-grid span,.expense-history-grid span{display:block;color:var(--muted);font-size:12px}
+.history-summary-figures strong,.history-detail-grid strong,.expense-history-grid strong{display:block;margin-top:4px}
+.history-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.saved-expense-history{margin-top:14px;padding:14px;background:#f7fbf9;border:1px solid #cce8db;border-radius:12px}
+.saved-expense-history .panel-heading{margin-bottom:10px}
+.saved-expense-history h4{margin:4px 0}
+.expense-history-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}
+.history-note{margin-top:12px;padding:11px;border-radius:9px;background:#fff6de;border:1px solid #ead28a}
+@media(max-width:900px){.history-job-summary{flex-direction:column}.history-detail-grid{grid-template-columns:repeat(2,1fr)}.expense-history-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.history-detail-grid,.expense-history-grid{grid-template-columns:1fr}}
