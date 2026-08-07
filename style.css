@@ -77,3 +77,25 @@ input:focus,select:focus,textarea:focus{border-color:#6aa5ec;box-shadow:0 0 0 3p
 .job-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.danger-text{color:var(--red)!important}
 
 tfoot th{border-top:2px solid var(--line);background:#f7f9fc}
+
+.manager-offer-section{background:#f6f9fe;border:1px solid #cfe0f7;border-radius:14px;padding:18px;margin-top:18px}
+.collector-offer-panel{margin:0 18px 18px;padding:18px;border:1px solid #cfe0f7;border-radius:14px;background:#f6f9fe;display:flex;justify-content:space-between;gap:20px;align-items:center}
+.collector-offer-panel h3{margin:5px 0}
+.collector-offer-panel p{margin:4px 0;color:var(--muted)}
+.offer-figures{display:flex;gap:12px}
+.offer-figures div{min-width:150px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}
+.offer-figures span{display:block;color:var(--muted);font-size:12px}
+.offer-figures strong{display:block;font-size:20px;margin-top:5px}
+@media(max-width:720px){.collector-offer-panel,.offer-figures{flex-direction:column;align-items:stretch}.offer-figures div{min-width:0}}
+
+.priority-centre{background:#fff;border:2px solid #ffd0d5;border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:20px}.priority-alert{display:flex;justify-content:space-between;gap:16px;align-items:center;border-radius:12px;padding:14px;border:1px solid var(--line)}.priority-alert.green{background:#effaf6;border-color:#9fe1c7}.priority-alert.amber{background:#fff8e7;border-color:#f0ca68}.priority-alert.red{background:#fff0f2;border-color:#ef9ba5}.empty-state{padding:18px;text-align:center;color:var(--muted)}.appraisal-summary{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:18px}.summary-chip,.summary-score{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:#fff}.summary-chip strong,.summary-score strong{display:block;font-size:22px}.summary-chip span,.summary-score span{display:block;color:var(--muted);font-size:12px;margin-top:4px}.summary-chip.good{background:#eaf8f2}.summary-chip.fault{background:#fdecef}.summary-chip.amber{background:#fff6de}.check-row.status-good{background:#e8f8f1;border-color:#7fd1ae}.check-row.status-fault{background:#fdebed;border-color:#e58d97}.check-row.status-amber{background:#fff4d8;border-color:#e9c35e}.check-row.status-white{background:#fff}.test-drive-section{background:#f8fbff;border:1px solid #d9e8fb;border-radius:14px;padding:18px;margin-top:12px}.test-drive-meta{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0;color:var(--muted)}.manager-decision-actions,.seller-response-panel{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.seller-response-panel{padding:0 18px 18px}@media(max-width:900px){.appraisal-summary{grid-template-columns:repeat(3,1fr)}}@media(max-width:560px){.appraisal-summary{grid-template-columns:repeat(2,1fr)}.priority-alert{align-items:flex-start;flex-direction:column}}
+
+.manager-review-locked{background:#fff8e8;border:1px solid #efd285;border-radius:14px;padding:18px;margin-top:18px}
+.manager-review-locked h4{margin:5px 0 8px}
+.manager-review-locked p:last-child{margin-bottom:0;color:var(--muted)}
+.alert-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+.saved-record-banner{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px;margin-bottom:18px;background:#eaf8f2;border:1px solid #92d6ba;border-radius:14px}
+.saved-record-banner h3{margin:4px 0}.saved-record-banner p{margin:4px 0;color:var(--muted)}
+.saved-record-banner + .saved-appraisal-print{border:1px solid var(--line);border-radius:14px;padding:20px}
+@media(max-width:700px){.saved-record-banner{flex-direction:column;align-items:flex-start}}

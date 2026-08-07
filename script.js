@@ -2,13 +2,44 @@ const $=id=>document.getElementById(id);
 const storeKey="deliveryAI_dai001";
 const defaultState={
   collectors:[{id:"c1",name:"Darren",phone:"",email:""},{id:"c2",name:"James",phone:"",email:""}],
-  collections:[]
+  collections:[],
+  savedAppraisals:[]
 };
 let state=load();
 
 function load(){
-  try{return JSON.parse(localStorage.getItem(storeKey))||structuredClone(defaultState)}
-  catch(e){return structuredClone(defaultState)}
+  try{
+    const loaded=JSON.parse(localStorage.getItem(storeKey))||structuredClone(defaultState);
+    loaded.collectors=loaded.collectors||structuredClone(defaultState.collectors);
+    loaded.collections=loaded.collections||[];
+    loaded.savedAppraisals=loaded.savedAppraisals||[];
+
+    // One-time migration of appraisal records saved by older Delivery AI versions.
+    loaded.collections.forEach(j=>{
+      if(j.appraisalComplete&&j.appraisal&&!loaded.savedAppraisals.some(a=>a.legacyCollectionId===j.id)){
+        loaded.savedAppraisals.push({
+          id:uid("appraisal"),
+          legacyCollectionId:j.id,
+          sourceCollectionId:j.id,
+          savedAt:j.appraisalSavedAt||j.appraisal.savedAt||new Date().toISOString(),
+          registration:j.registration,
+          make:j.make,
+          model:j.model,
+          vehicleMileage:j.vehicleMileage,
+          collector:j.collector,
+          collectionDate:j.collectionDate,
+          collectionAddress:j.collectionAddress,
+          destination:j.destination,
+          agreedPrice:j.agreedPrice,
+          finalPrice:j.finalPrice,
+          appraisal:structuredClone(j.appraisal),
+          testDrive:structuredClone(j.testDrive||null),
+          timeline:structuredClone(j.timeline||[])
+        });
+      }
+    });
+    return loaded;
+  }catch(e){return structuredClone(defaultState)}
 }
 function save(){localStorage.setItem(storeKey,JSON.stringify(state))}
 function uid(prefix="id"){return prefix+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -25,6 +56,103 @@ function hoursWorked(j){
   return Math.max(0,(end-new Date(j.clockIn))/36e5);
 }
 function monthKey(d){const x=new Date(d);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`}
+function formatDuration(minutes){const mins=Math.max(0,Number(minutes||0));const h=Math.floor(mins/60),m=Math.round(mins%60);return h?`${h} hr ${m} min`:`${m} min`}
+function elapsedMinutes(start){return start?Math.max(0,(Date.now()-new Date(start))/60000):0}
+
+function getReviewSnapshot(j){
+  if(!j)return null;
+  if(j.reviewAppraisalId){
+    return state.savedAppraisals.find(a=>a.id===j.reviewAppraisalId)||j.reviewAppraisalSnapshot||null;
+  }
+  return j.reviewAppraisalSnapshot||null;
+}
+
+function getReviewAppraisal(j){
+  return getReviewSnapshot(j)?.appraisal||{};
+}
+
+function syncReviewSnapshot(j){
+  const saved=getReviewSnapshot(j);
+  if(!saved)return;
+  j.reviewAppraisalSnapshot=structuredClone(saved);
+}
+
+function captureLiveAppraisal(j){
+  const checks={},tyres={},testChecks={};
+  document.querySelectorAll("[data-check]").forEach(x=>checks[x.dataset.check]=x.value);
+  document.querySelectorAll("[data-tyre]").forEach(x=>tyres[x.dataset.tyre]=Number(x.value||0));
+  document.querySelectorAll("[data-test-check]").forEach(x=>testChecks[x.dataset.testCheck]=x.value);
+
+  const testDrive={
+    ...(j.testDrive||{}),
+    startMileage:Number($("testDriveStartMileage")?.value||j.testDrive?.startMileage||0),
+    endMileage:Number($("testDriveEndMileage")?.value||j.testDrive?.endMileage||0),
+    notes:$("testDriveNotes")?.value||j.testDrive?.notes||"",
+    checks:testChecks
+  };
+  testDrive.distance=Math.max(0,Number(testDrive.endMileage||0)-Number(testDrive.startMileage||0));
+
+  const appraisal={
+    checks,
+    tyres,
+    damageParts:[...document.querySelectorAll("[data-damage].selected")].map(x=>x.dataset.damage),
+    faultCodes:$("faultCodes")?.value||"",
+    bodyDescription:$("bodyDescription")?.value||"",
+    interiorDescription:$("interiorDescription")?.value||"",
+    notes:$("appraisalNotes")?.value||"",
+    savedAt:new Date().toISOString()
+  };
+
+  const temp={...j,appraisal,testDrive};
+  appraisal.summary=appraisalStats(temp);
+  return {appraisal,testDrive};
+}
+
+function createPermanentAppraisal(j,{forReview=false}={}){
+  const captured=captureLiveAppraisal(j);
+  const savedAt=captured.appraisal.savedAt;
+
+  const record={
+    id:uid("appraisal"),
+    sourceCollectionId:j.id,
+    savedAt,
+    registration:j.registration,
+    make:j.make,
+    model:j.model,
+    vehicleMileage:j.vehicleMileage,
+    collector:j.collector,
+    collectionDate:j.collectionDate,
+    collectionAddress:j.collectionAddress,
+    destination:j.destination,
+    agreedPrice:Number(j.agreedPrice||0),
+    finalPrice:Number(j.finalPrice||0),
+    startMileage:Number(j.startMileage||0),
+    finishMileage:Number(j.finishMileage||0),
+    distanceTravelled:Number(j.distanceTravelled||0),
+    appraisal:structuredClone(captured.appraisal),
+    testDrive:structuredClone(captured.testDrive),
+    timeline:structuredClone(j.timeline||[]),
+    permanent:true
+  };
+
+  state.savedAppraisals.push(record);
+  j.lastSavedAppraisalId=record.id;
+
+  if(forReview){
+    j.reviewAppraisalId=record.id;
+    j.reviewAppraisalSnapshot=structuredClone(record);
+  }
+
+  return record;
+}
+
+function resetLiveAppraisal(j){
+  j.appraisal={checks:{},tyres:{},damageParts:[],faultCodes:"",bodyDescription:"",interiorDescription:"",notes:""};
+  j.testDrive=null;
+  j.appraisalStarted=false;
+  j.appraisalComplete=false;
+  j.appraisalSavedAt=null;
+}
 function toast(msg){$("toast").textContent=msg;$("toast").classList.add("show");setTimeout(()=>$("toast").classList.remove("show"),2200)}
 
 function showPage(page){
@@ -65,16 +193,21 @@ function renderCommand(){
   const hrs=month.reduce((s,j)=>s+hoursWorked(j),0);
   const miles=month.reduce((s,j)=>s+Number(j.distanceTravelled||0),0);
   $("heroNetSaving").textContent=money(red-exp);
+  const acceptedToday=state.collections.filter(j=>j.sellerAcceptedAt&&j.sellerAcceptedAt.slice(0,10)===today).length;
+  const declinedToday=state.collections.filter(j=>j.sellerDeclinedAt&&j.sellerDeclinedAt.slice(0,10)===today).length;
+  const awaitingReview=state.collections.filter(j=>j.status==="Awaiting Sales Manager Review"||j.status==="Revised Offer Requested").length;
+
   $("commandMetrics").innerHTML=[
-    metric("Collections today",todayJobs.length,"Scheduled, active and no collection","blue"),
-    metric("Collections this month",completed.length,"Delivered vehicles","good"),
+    metric("Awaiting Manager Review",awaitingReview,"Collector waiting for decision","warn"),
+    metric("Seller Accepted Today",acceptedToday,"Offers accepted today","good"),
+    metric("Seller Declined Today",declinedToday,"Offers declined today","warn"),
     metric("No Collection Trips",month.filter(j=>j.status==="No Collection").length,`${money(month.filter(j=>j.status==="No Collection").reduce((s,j)=>s+totalExpenses(j),0))} cost this month`,"warn"),
+    metric("Collections this month",completed.length,"Delivered vehicles","good"),
     metric("Travel costs this month",money(exp),`${completed.length?money(exp/completed.length):money(0)} average`,"warn"),
     metric("Reductions this month",money(red),`${completed.length?money(red/completed.length):money(0)} average`,"good"),
     metric("Collector hours",`${num(hrs)} hrs`,"Clocked working time","blue"),
     metric("Distance travelled",`${num(miles,0)} mi`,"Completed journey mileage","blue"),
-    metric("Net saving",money(red-exp),"Reduction less travel costs","good"),
-    metric("Awaiting appraisal",month.filter(j=>!j.appraisalComplete).length,"Open checks","warn")
+    metric("Net saving",money(red-exp),"Reduction less travel costs","good")
   ].join("");
   $("liveCollections").innerHTML=todayJobs.length?todayJobs.map(jobRow).join(""):`<p>No collections scheduled today.</p>`;
   const stats=state.collectors.map(c=>{
@@ -82,7 +215,62 @@ function renderCommand(){
     return {name:c.name,count:jobs.length,hours:jobs.reduce((s,j)=>s+hoursWorked(j),0),reduction:jobs.reduce((s,j)=>s+reduction(j),0)}
   }).sort((a,b)=>b.reduction-a.reduction);
   $("collectorSnapshot").innerHTML=stats.length?`<div class="table-wrap"><table><thead><tr><th>Collector</th><th>Cars</th><th>Hours</th><th>Reduction</th></tr></thead><tbody>${stats.map(s=>`<tr><td><strong>${s.name}</strong></td><td>${s.count}</td><td>${num(s.hours)}</td><td>${money(s.reduction)}</td></tr>`).join("")}</tbody></table></div>`:"No collectors.";
+  renderPriorityAlerts();
+  renderLiveCollectorBoard();
 }
+function renderPriorityAlerts(){
+  const alertStatuses=[
+    "Awaiting Sales Manager Review",
+    "Seller Accepted",
+    "Seller Declined",
+    "Revised Offer Requested"
+  ];
+
+  const waiting=state.collections
+    .filter(j=>alertStatuses.includes(j.status)&&!j.managerAlertAcknowledged)
+    .sort((a,b)=>new Date(a.alertCreatedAt||a.reviewSubmittedAt||a.sellerResponseAt||a.createdAt)-new Date(b.alertCreatedAt||b.reviewSubmittedAt||b.sellerResponseAt||b.createdAt));
+
+  $("priorityCount").textContent=`${waiting.length} waiting`;
+  $("priorityAlerts").innerHTML=waiting.length?waiting.map(j=>{
+    const since=j.alertCreatedAt||j.reviewSubmittedAt||j.sellerResponseAt||j.createdAt;
+    const mins=Math.round(elapsedMinutes(since));
+    let level="amber",title=j.status,action="Open Appraisal";
+
+    if(j.status==="Seller Accepted"){level="green";title="🟢 SELLER ACCEPTED OFFER";action="View Result"}
+    else if(j.status==="Seller Declined"){level="red";title="🔴 SELLER DECLINED OFFER";action="Review Offer"}
+    else if(j.status==="Awaiting Sales Manager Review"){level=mins>20?"red":mins>10?"amber":"green";title="🚨 COLLECTOR WAITING FOR REVIEW"}
+    else if(j.status==="Revised Offer Requested"){level="amber";title="🔄 REVISED OFFER REQUESTED"}
+
+    return `<div class="priority-alert ${level}">
+      <div>
+        <span class="badge ${level}">${title}</span>
+        <h4>${j.registration} · ${j.make||""} ${j.model||""}</h4>
+        <p>${collectorName(j.collector)} · Waiting ${mins} min · Agreed price ${money(j.agreedPrice||0)}</p>
+        ${j.status==="Seller Accepted"?`<p><strong>Accepted price: ${money(j.finalPrice||getReviewAppraisal(j).managerOfferPrice||j.agreedPrice||0)}</strong></p>`:""}
+        ${j.status==="Seller Declined"?`<p><strong>Offer declined: ${money(getReviewAppraisal(j).managerOfferPrice||0)}</strong></p>`:""}
+      </div>
+      <div class="alert-actions">
+        <button class="primary-btn" onclick="openManagerReview('${j.id}')">${action}</button>
+        ${j.status==="Seller Accepted"?`<button class="secondary-btn" onclick="acknowledgeManagerAlert('${j.id}')">Acknowledge</button>`:""}
+      </div>
+    </div>`;
+  }).join(""):`<div class="empty-state">No urgent actions waiting.</div>`;
+}
+
+window.acknowledgeManagerAlert=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+  j.managerAlertAcknowledged=true;
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:new Date().toISOString(),text:"Sales Manager Acknowledged Alert"});
+  save();renderAll();toast("Alert acknowledged");
+};
+
+function renderLiveCollectorBoard(){
+  const active=state.collections.filter(j=>j.clockIn&&!j.clockOut);
+  $("liveCollectorBoard").innerHTML=active.length?`<div class="table-wrap"><table><thead><tr><th>Collector</th><th>Vehicle</th><th>Stage</th><th>Since Clock In</th></tr></thead><tbody>${active.map(j=>`<tr><td><strong>${collectorName(j.collector)}</strong></td><td>${j.registration}</td><td><span class="badge blue">${j.status}</span></td><td>${formatDuration(elapsedMinutes(j.clockIn))}</td></tr>`).join("")}</tbody></table></div>`:"<p>No collectors currently clocked in.</p>";
+}
+window.openManagerReview=id=>{showPage("appraisals");$("appraisalJobSelect").value=id;renderAppraisals();setTimeout(()=>document.querySelector(".manager-offer-section")?.scrollIntoView({behavior:"smooth"}),100)};
 function jobRow(j){
   const badgeClass=j.status==="Delivered"?"green":j.status==="No Collection"||j.status==="Cancelled"?"red":"blue";
   return `<div class="job-row">
@@ -128,6 +316,7 @@ function renderDriver(){
   sel.innerHTML=jobOptions();
   if(state.collections.some(j=>j.id===current))sel.value=current;
   const j=state.collections.find(x=>x.id===sel.value);
+  const review=getReviewAppraisal(j);
   if(!j){$("driverJobCard").innerHTML=`<div class="panel"><p>Select a collection to begin.</p></div>`;return}
   $("driverJobCard").innerHTML=`<div class="driver-card">
     <div class="driver-card-top"><p class="eyebrow">ACTIVE COLLECTION</p><h3>${j.registration} · ${j.make||""} ${j.model||""}</h3><p>${j.collectionAddress||"Collection address not entered"} → ${j.destination||"Destination not entered"}</p></div>
@@ -137,6 +326,19 @@ function renderDriver(){
       <div class="detail-card"><span>Reduction</span><strong>${money(reduction(j))}</strong></div>
       <div class="detail-card"><span>Travel cost</span><strong>${money(totalExpenses(j))}</strong></div>
     </div>
+
+    <div class="collector-offer-panel">
+      <div>
+        <p class="eyebrow">SALES MANAGER OFFER</p>
+        <h3>${j.status==="Awaiting Sales Manager Review"?"Awaiting Sales Manager Review":(review.managerOfferStatus||"No decision sent yet")}</h3>
+        <p>${j.status==="Awaiting Sales Manager Review"?"The Sales Manager has been alerted and is reviewing this appraisal.":(review.managerOfferNote||"No manager instructions have been added yet.")}</p>
+      </div>
+      <div class="offer-figures">
+        <div><span>Approved offer</span><strong>${review.managerOfferPrice!=null?money(review.managerOfferPrice):"Awaiting review"}</strong></div>
+        <div><span>Recommended reduction</span><strong>${review.managerRecommendedReduction!=null?money(review.managerRecommendedReduction):"Awaiting review"}</strong></div>
+      </div>
+    </div>
+    ${j.status==="Offer Sent to Collector"||j.status==="Seller Declined"?`<div class="seller-response-panel"><button class="primary-btn" onclick="sellerAccepted('${j.id}')">Seller Accepted</button><button class="secondary-btn" onclick="sellerDeclined('${j.id}')">Seller Declined</button><button class="secondary-btn" onclick="requestRevisedOffer('${j.id}')">Request Revised Offer</button></div>`:""}
     <div class="driver-actions">
       <button class="action-start" onclick="clockIn('${j.id}')">Clock In</button>
       <button class="action-step" onclick="setStatus('${j.id}','At Collection')">Arrived</button>
@@ -157,7 +359,7 @@ function renderDriver(){
   </div>`;
 }
 $("driverJobSelect").onchange=renderDriver;
-window.clockIn=id=>{const j=state.collections.find(x=>x.id===id);if(!j.clockIn)j.clockIn=new Date().toISOString();j.status="Travelling";save();renderAll();toast("Collector clocked in")};
+window.clockIn=id=>{const j=state.collections.find(x=>x.id===id);if(!j.clockIn)j.clockIn=new Date().toISOString();j.status="Travelling";j.timeline=j.timeline||[];j.timeline.push({time:j.clockIn,text:"Clocked In"});j.timeline.push({time:new Date().toISOString(),text:"Travelling"});save();renderAll();toast("Collector clocked in — office alerted")};
 window.clockOut=id=>{const j=state.collections.find(x=>x.id===id);j.clockOut=new Date().toISOString();save();renderAll();toast("Collector clocked out")};
 window.setStatus=(id,status)=>{const j=state.collections.find(x=>x.id===id);j.status=status;j.timeline.push({time:new Date().toISOString(),text:status});save();renderAll();toast("Status updated")};
 window.markNoCollection=id=>{
@@ -179,7 +381,36 @@ window.deleteCollection=id=>{
   state.collections=state.collections.filter(x=>x.id!==id);
   save();renderAll();toast("Collection deleted");
 };
-window.saveMileage=id=>{const j=state.collections.find(x=>x.id===id);j.startMileage=Number($("startMiles").value||0);j.finishMileage=Number($("finishMiles").value||0);j.distanceTravelled=Number($("distanceMiles").value||Math.max(0,j.finishMileage-j.startMileage));save();renderAll();toast("Mileage saved")};
+window.saveMileage=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+
+  j.startMileage=Number($("startMiles").value||0);
+  j.finishMileage=Number($("finishMiles").value||0);
+  j.distanceTravelled=Number($("distanceMiles").value||Math.max(0,j.finishMileage-j.startMileage));
+
+  const recordedAt=new Date().toISOString();
+  j.mileageRecordedAt=recordedAt;
+  j.timeline=j.timeline||[];
+  j.timeline.push({
+    time:recordedAt,
+    text:`Vehicle Mileage Recorded — Start: ${j.startMileage.toLocaleString("en-GB")} miles · End: ${j.finishMileage.toLocaleString("en-GB")} miles · Distance: ${j.distanceTravelled.toLocaleString("en-GB")} miles`
+  });
+
+  // Keep the permanent review archive in sync if an appraisal has already been saved.
+  const saved=getReviewSnapshot(j);
+  if(saved){
+    saved.startMileage=j.startMileage;
+    saved.finishMileage=j.finishMileage;
+    saved.distanceTravelled=j.distanceTravelled;
+    saved.timeline=structuredClone(j.timeline);
+    j.reviewAppraisalSnapshot=structuredClone(saved);
+  }
+
+  save();
+  renderAll();
+  toast("Mileage saved to collection timeline");
+};
 
 const checkItems=[
 "Air conditioning working","Satellite navigation working","Bluetooth working","Lights working","Vents undamaged","Two keys present",
@@ -187,14 +418,26 @@ const checkItems=[
 "Seat belts pulled out and checked","Electric mirrors working","Reverse camera working","All console buttons working",
 "Wipers and washers working","Windscreen condition good","Engine starts correctly","Clutch and gearbox working","Handbrake working"
 ];
+const testDriveItems=["Engine performance","Gearbox operation","Clutch operation","Steering","Suspension","Braking performance","Vehicle tracks straight","Unusual noises","Warning lights during drive","Parking sensors","Cruise control","Reverse camera","General driving condition"];
 const damageParts=["Front bumper","Bonnet","Roof","Rear bumper","Boot","NSF wing","OSF wing","NSF door","NSR door","OSF door","OSR door","Wheels","Windscreen"];
+function startTestDrive(id){const j=state.collections.find(x=>x.id===id);if(!j)return;j.testDrive=j.testDrive||{checks:{}};if(!j.testDrive.start)j.testDrive.start=new Date().toISOString();j.testDrive.startMileage=Number($("testDriveStartMileage")?.value||0);j.status="Test Drive";j.timeline=j.timeline||[];j.timeline.push({time:j.testDrive.start,text:"Test Drive Started"});save();renderAll();toast("Test drive started")}
+function finishTestDrive(id){const j=state.collections.find(x=>x.id===id);if(!j?.testDrive?.start){toast("Start the test drive first");return}j.testDrive.end=new Date().toISOString();j.testDrive.endMileage=Number($("testDriveEndMileage")?.value||0);j.testDrive.distance=Math.max(0,j.testDrive.endMileage-Number(j.testDrive.startMileage||0));j.testDrive.durationMinutes=Math.max(0,(new Date(j.testDrive.end)-new Date(j.testDrive.start))/60000);j.testDrive.notes=$("testDriveNotes")?.value||"";j.testDrive.checks={};document.querySelectorAll("[data-test-check]").forEach(x=>j.testDrive.checks[x.dataset.testCheck]=x.value);j.status="Appraising";j.timeline.push({time:j.testDrive.end,text:"Test Drive Finished"});save();renderAll();toast("Test drive completed")}
+function countFaultCodes(text){if(!text)return 0;const m=text.toUpperCase().match(/\b[PCBU][0-9A-F]{4}\b/g);return m?new Set(m).size:0}
+function appraisalStats(j){const a=j.appraisal||{};const all={...(a.checks||{}),...(j.testDrive?.checks||{})};const v=Object.values(all);const good=v.filter(x=>x==="Good").length,faults=v.filter(x=>x==="Fault").length,notChecked=v.filter(x=>x==="Not checked").length,notFitted=v.filter(x=>x==="Not fitted").length,codes=countFaultCodes(a.faultCodes||"");const damage=(a.damageParts||[]).length;const tyrePenalty=Object.values(a.tyres||{}).filter(x=>Number(x)>0&&Number(x)<3).length*5;const score=Math.max(0,Math.round(100-faults*8-codes*5-notChecked*2-damage*2-tyrePenalty));const label=score>=95?"Excellent":score>=80?"Good":score>=65?"Fair":score>=45?"Poor":"Very Poor";const stars=score>=95?5:score>=80?4:score>=65?3:score>=45?2:1;return{good,faults,notChecked,notFitted,codes,score,label,stars}}
+function applyCheckColour(sel){const row=sel.closest(".check-row");if(!row)return;row.classList.remove("status-good","status-fault","status-amber","status-white");if(sel.value==="Good")row.classList.add("status-good");else if(sel.value==="Fault")row.classList.add("status-fault");else if(sel.value==="Not checked")row.classList.add("status-amber");else if(sel.value==="Not fitted")row.classList.add("status-white")}
+function updateAppraisalSummary(){const job=state.collections.find(x=>x.id===$("appraisalJobSelect")?.value);if(!job)return;const checks={};document.querySelectorAll("[data-check]").forEach(x=>checks[x.dataset.check]=x.value);const testChecks={};document.querySelectorAll("[data-test-check]").forEach(x=>testChecks[x.dataset.testCheck]=x.value);const temp={...job,appraisal:{...(job.appraisal||{}),checks,faultCodes:$("faultCodes")?.value||job.appraisal?.faultCodes||""},testDrive:{...(job.testDrive||{}),checks:testChecks}};const s=appraisalStats(temp);$("appraisalSummary").innerHTML=`<div class="summary-chip good">🟢 <strong>${s.good}</strong><span>Good</span></div><div class="summary-chip fault">🔴 <strong>${s.faults}</strong><span>Faults</span></div><div class="summary-chip amber">🟠 <strong>${s.notChecked}</strong><span>Not Checked</span></div><div class="summary-chip white">⚪ <strong>${s.notFitted}</strong><span>Not Fitted</span></div><div class="summary-chip code">💻 <strong>${s.codes}</strong><span>Fault Codes</span></div><div class="summary-score"><strong>${"★".repeat(s.stars)}${"☆".repeat(5-s.stars)} ${s.score}%</strong><span>${s.label}</span></div>`}
 function renderAppraisals(){
   const sel=$("appraisalJobSelect"),current=sel.value;sel.innerHTML=jobOptions();if(state.collections.some(j=>j.id===current))sel.value=current;
   const j=state.collections.find(x=>x.id===sel.value);
   if(!j){$("appraisalWorkspace").innerHTML="<p>Select a collection to complete an appraisal.</p>";return}
-  const a=j.appraisal||{checks:{},tyres:{},damageParts:[]};
+  const reviewMode=["Awaiting Sales Manager Review","Revised Offer Requested","Seller Declined","Seller Accepted","Offer Sent to Collector","Collection Approved"].includes(j.status)&&!!getReviewSnapshot(j);
+  const reviewSnapshot=getReviewSnapshot(j);
+  const a=reviewMode?(reviewSnapshot?.appraisal||{}):(j.appraisal||{checks:{},tyres:{},damageParts:[]});
+  const td=reviewMode?(reviewSnapshot?.testDrive||null):j.testDrive;
   $("appraisalWorkspace").innerHTML=`
   <div id="printAppraisal">
+    <div class="appraisal-summary" id="appraisalSummary"></div>
+    <div class="form-section test-drive-section"><div class="panel-heading"><div><p class="eyebrow">ROAD TEST</p><h4>Test Drive</h4></div><span class="badge blue">${td?.end?"Completed":td?.start?"In progress":"Not started"}</span></div><div class="form-grid three"><label>Start mileage<input id="testDriveStartMileage" type="number" value="${td?.startMileage||""}"></label><label>Finish mileage<input id="testDriveEndMileage" type="number" value="${td?.endMileage||""}"></label><label>Distance<input id="testDriveDistance" readonly value="${td?.distance||0} miles"></label></div><div class="form-actions"><button type="button" class="secondary-btn" onclick="startTestDrive('${j.id}')">Start Test Drive</button><button type="button" class="primary-btn" onclick="finishTestDrive('${j.id}')">Finish Test Drive</button></div><div class="test-drive-meta"><span>Started: <strong>${dt(td?.start)}</strong></span><span>Finished: <strong>${dt(td?.end)}</strong></span><span>Duration: <strong>${formatDuration(td?.durationMinutes||0)}</strong></span></div><div class="check-grid">${testDriveItems.map(item=>`<div class="check-row"><span>${item}</span><select data-test-check="${item}"><option></option><option ${td?.checks?.[item]==="Good"?"selected":""}>Good</option><option ${td?.checks?.[item]==="Fault"?"selected":""}>Fault</option><option ${td?.checks?.[item]==="Not fitted"?"selected":""}>Not fitted</option><option ${td?.checks?.[item]==="Not checked"?"selected":""}>Not checked</option></select></div>`).join("")}</div><label>Test drive notes<textarea id="testDriveNotes">${td?.notes||""}</textarea></label></div>
     <div class="form-section"><h4>${j.registration} · ${j.make||""} ${j.model||""}</h4>
       <div class="form-grid three">
         <label>NSF tyre tread (mm)<input data-tyre="NSF" type="number" step=".1" value="${a.tyres?.NSF||""}"></label>
@@ -215,41 +458,296 @@ function renderAppraisals(){
         <label>Additional appraisal notes<textarea id="appraisalNotes">${a.notes||""}</textarea></label>
       </div>
     </div>
+
+    ${["Awaiting Sales Manager Review","Revised Offer Requested","Seller Declined","Seller Accepted","Offer Sent to Collector","Collection Approved"].includes(j.status)?`
+    <div class="form-section manager-offer-section">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">SALES MANAGER REVIEW</p>
+          <h4>Commercial Decision</h4>
+        </div>
+        <span class="badge ${j.status==="Awaiting Sales Manager Review"?"amber":"blue"}">${j.status}</span>
+      </div>
+      <div class="form-grid three">
+        <label>Original agreed purchase price (£)
+          <input id="managerAgreedPrice" type="number" step=".01" value="${j.agreedPrice||0}" readonly>
+        </label>
+        <label>Recommended reduction (£)
+          <input id="managerRecommendedReduction" type="number" min="0" step=".01" value="${a.managerRecommendedReduction||0}" oninput="updateManagerOffer('${j.id}')">
+        </label>
+        <label>Approved offer price (£)
+          <input id="managerOfferPrice" type="text" value="${money(a.managerOfferPrice??j.agreedPrice??0)}" readonly>
+        </label>
+      </div>
+      <div class="form-grid two">
+        <label>Sales manager note
+          <textarea id="managerOfferNote" placeholder="Reason for revised offer or instructions to collector">${a.managerOfferNote||""}</textarea>
+        </label>
+        <label>Decision
+          <select id="managerOfferStatus">
+            <option value="">Select</option>
+            <option value="Accept Agreed Price" ${a.managerOfferStatus==="Accept Agreed Price"?"selected":""}>Accept Agreed Price</option>
+            <option value="Reduce Offer" ${a.managerOfferStatus==="Reduce Offer"?"selected":""}>Reduce Offer</option>
+            <option value="Reject Vehicle" ${a.managerOfferStatus==="Reject Vehicle"?"selected":""}>Reject Vehicle</option>
+          </select>
+        </label>
+      </div>
+      <div class="manager-decision-actions">
+        <button type="button" class="secondary-btn" onclick="managerAcceptAgreed('${j.id}')">Accept Agreed Price</button>
+        <button type="button" class="secondary-btn" onclick="setManagerReduction('${j.id}',100)">+£100</button>
+        <button type="button" class="secondary-btn" onclick="setManagerReduction('${j.id}',250)">+£250</button>
+        <button type="button" class="secondary-btn" onclick="setManagerReduction('${j.id}',500)">+£500</button>
+        <button type="button" class="secondary-btn" onclick="setManagerReduction('${j.id}',750)">+£750</button>
+        <button type="button" class="secondary-btn" onclick="setManagerReduction('${j.id}',1000)">+£1,000</button>
+        <button type="button" class="secondary-btn danger-text" onclick="managerRejectVehicle('${j.id}')">Reject Vehicle</button>
+      </div>
+      <button type="button" class="primary-btn" onclick="saveManagerOffer('${j.id}')">Send Decision to Collector</button>
+    </div>`:`
+    <div class="form-section manager-review-locked">
+      <p class="eyebrow">SALES MANAGER REVIEW</p>
+      <h4>Not yet submitted for review</h4>
+      <p>Complete the appraisal and press <strong>Submit for Sales Manager Review</strong>. No reduction or approved offer will be created until then.</p>
+    </div>`}
   </div>
-  <div class="form-actions"><button class="secondary-btn" onclick="printAppraisal()">Print Appraisal</button><button class="primary-btn" onclick="saveAppraisal('${j.id}')">Save Appraisal</button></div>`;
-  document.querySelectorAll("[data-damage]").forEach(b=>b.onclick=()=>b.classList.toggle("selected"));
+  <div class="form-actions">
+    ${reviewMode?`
+      <button class="secondary-btn" onclick="printReviewAppraisal('${j.id}')">Print Saved Appraisal</button>
+    `:`
+      <button class="secondary-btn danger-text" onclick="deleteAppraisal('${j.id}')">Delete Unsaved Draft</button>
+      <button class="secondary-btn" onclick="printAppraisal()">Print Draft</button>
+      <button class="secondary-btn" onclick="submitForReview('${j.id}')">Save & Submit for Sales Manager Review</button>
+      <button class="primary-btn" onclick="saveAppraisal('${j.id}')">Save Appraisal Permanently</button>
+    `}
+  </div>`;
+  document.querySelectorAll("[data-damage]").forEach(b=>b.onclick=()=>{b.classList.toggle("selected");updateAppraisalSummary()});document.querySelectorAll("[data-check],[data-test-check]").forEach(sel=>{applyCheckColour(sel);sel.addEventListener("change",()=>{applyCheckColour(sel);updateAppraisalSummary()})});if($("faultCodes"))$("faultCodes").addEventListener("input",updateAppraisalSummary);updateAppraisalSummary();
 }
 $("appraisalJobSelect").onchange=renderAppraisals;
-window.saveAppraisal=id=>{
-  const j=state.collections.find(x=>x.id===id),checks={},tyres={};
-  document.querySelectorAll("[data-check]").forEach(x=>checks[x.dataset.check]=x.value);
-  document.querySelectorAll("[data-tyre]").forEach(x=>tyres[x.dataset.tyre]=Number(x.value||0));
 
-  const savedAt=new Date().toISOString();
-  j.appraisal={
-    checks,
-    tyres,
-    damageParts:[...document.querySelectorAll("[data-damage].selected")].map(x=>x.dataset.damage),
-    faultCodes:$("faultCodes").value,
-    bodyDescription:$("bodyDescription").value,
-    interiorDescription:$("interiorDescription").value,
-    notes:$("appraisalNotes").value,
-    savedAt
-  };
-  j.appraisalComplete=true;
-  j.appraisalSavedAt=savedAt;
+window.updateManagerOffer=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+  const reduction=Number($("managerRecommendedReduction")?.value||0);
+  const offer=Math.max(0,Number(j.agreedPrice||0)-reduction);
+  if($("managerOfferPrice"))$("managerOfferPrice").value=money(offer);
+};
+
+window.setManagerReduction=(id,amount)=>{
+  if($("managerRecommendedReduction"))$("managerRecommendedReduction").value=amount;
+  if($("managerOfferStatus"))$("managerOfferStatus").value=amount>0?"Reduce Offer":"Accept Agreed Price";
+  updateManagerOffer(id);
+};
+
+window.managerAcceptAgreed=id=>{
+  if($("managerRecommendedReduction"))$("managerRecommendedReduction").value=0;
+  if($("managerOfferStatus"))$("managerOfferStatus").value="Accept Agreed Price";
+  updateManagerOffer(id);
+};
+
+window.managerRejectVehicle=id=>{
+  if($("managerOfferStatus"))$("managerOfferStatus").value="Reject Vehicle";
+  if($("managerRecommendedReduction"))$("managerRecommendedReduction").value=0;
+  updateManagerOffer(id);
+};
+
+window.saveManagerOffer=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+
+  if(!["Awaiting Sales Manager Review","Revised Offer Requested","Seller Declined"].includes(j.status)){
+    toast("Appraisal must be submitted for manager review first");
+    return;
+  }
+
+  const decision=$("managerOfferStatus")?.value||"";
+  if(!decision){toast("Choose a Sales Manager decision first");return}
+
+  const reduction=decision==="Accept Agreed Price"?0:Number($("managerRecommendedReduction")?.value||0);
+  const agreed=Number(j.agreedPrice||0);
+  const offer=decision==="Reject Vehicle"?0:Math.max(0,agreed-reduction);
+
+  const saved=getReviewSnapshot(j);
+  if(!saved){toast("No permanently saved appraisal is available for review");return}
+  saved.appraisal=saved.appraisal||{};
+  saved.appraisal.managerRecommendedReduction=reduction;
+  saved.appraisal.managerOfferPrice=offer;
+  saved.appraisal.managerOfferNote=$("managerOfferNote")?.value||"";
+  saved.appraisal.managerOfferStatus=decision;
+  saved.appraisal.managerOfferUpdatedAt=new Date().toISOString();
+  j.reviewAppraisalSnapshot=structuredClone(saved);
+
+  j.timeline=j.timeline||[];
+
+  if(decision==="Reject Vehicle"){
+    j.status="No Collection";
+    j.noCollectionReason=saved.appraisal.managerOfferNote||"Rejected by Sales Manager";
+    j.noCollectionAt=saved.appraisal.managerOfferUpdatedAt;
+    j.timeline.push({time:j.noCollectionAt,text:"Sales Manager Rejected Vehicle — No Collection"});
+    j.managerAlertAcknowledged=false;
+    j.alertCreatedAt=j.noCollectionAt;
+    save();renderAll();toast("Vehicle rejected — marked No Collection");
+    return;
+  }
+
+  j.status="Offer Sent to Collector";
+  j.offerSentAt=saved.appraisal.managerOfferUpdatedAt;
+  j.managerAlertAcknowledged=true;
+  j.timeline.push({time:j.offerSentAt,text:`Sales Manager Decision Sent: ${money(offer)} (${money(reduction)} reduction)`});
+  save();renderAll();toast("Decision sent to collector");
+};
+
+window.saveAppraisal=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+
+  if(getReviewSnapshot(j)){
+    toast("This appraisal has already been saved and cannot be deleted or overwritten");
+    return;
+  }
+
+  const record=createPermanentAppraisal(j);
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:record.savedAt,text:`Appraisal Permanently Saved (${record.id})`});
+
+  resetLiveAppraisal(j);
+  j.status=j.clockIn?"At Collection":"Appraisal Not Started";
 
   save();
   renderAll();
-  toast("Appraisal saved permanently");
+  toast("Appraisal saved permanently — live form refreshed");
 };
-window.printAppraisal=()=>{
-  const id=$("appraisalJobSelect").value;
+
+window.submitForReview=id=>{
   const j=state.collections.find(x=>x.id===id);
-  if(j?.appraisalComplete){
-    printSavedAppraisal(id);
+  if(!j)return;
+
+  if(getReviewSnapshot(j)){
+    toast("A saved appraisal is already under review for this collection");
     return;
   }
+
+  const record=createPermanentAppraisal(j,{forReview:true});
+  j.status="Awaiting Sales Manager Review";
+  j.reviewSubmittedAt=new Date().toISOString();
+  j.alertCreatedAt=j.reviewSubmittedAt;
+  j.managerAlertAcknowledged=false;
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:record.savedAt,text:`Appraisal Permanently Saved (${record.id})`});
+  j.timeline.push({time:j.reviewSubmittedAt,text:"Saved Appraisal Submitted for Sales Manager Review"});
+
+  resetLiveAppraisal(j);
+  save();
+  renderAll();
+  toast("Appraisal saved permanently — Sales Manager alerted");
+};
+
+window.sellerAccepted=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+  const a=getReviewAppraisal(j);
+
+  j.finalPrice=Number(a.managerOfferPrice??j.agreedPrice??0);
+  j.status="Seller Accepted";
+  j.sellerAcceptedAt=new Date().toISOString();
+  j.sellerResponseAt=j.sellerAcceptedAt;
+  j.alertCreatedAt=j.sellerAcceptedAt;
+  j.managerAlertAcknowledged=false;
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:j.sellerAcceptedAt,text:`Seller Accepted Offer: ${money(j.finalPrice)}`});
+
+  const saved=getReviewSnapshot(j);
+  if(saved){
+    saved.finalPrice=j.finalPrice;
+    saved.timeline=structuredClone(j.timeline);
+    saved.appraisal=saved.appraisal||{};
+    saved.appraisal.sellerOutcome="Accepted";
+    saved.appraisal.sellerOutcomeAt=j.sellerAcceptedAt;
+    j.reviewAppraisalSnapshot=structuredClone(saved);
+  }
+
+  save();renderAll();toast("Seller accepted — Sales Manager notified");
+};
+
+window.sellerDeclined=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+  const a=getReviewAppraisal(j);
+
+  j.status="Seller Declined";
+  j.sellerDeclinedAt=new Date().toISOString();
+  j.sellerResponseAt=j.sellerDeclinedAt;
+  j.alertCreatedAt=j.sellerDeclinedAt;
+  j.managerAlertAcknowledged=false;
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:j.sellerDeclinedAt,text:`Seller Declined Offer: ${money(a.managerOfferPrice||0)}`});
+
+  const saved=getReviewSnapshot(j);
+  if(saved){
+    saved.timeline=structuredClone(j.timeline);
+    saved.appraisal=saved.appraisal||{};
+    saved.appraisal.sellerOutcome="Declined";
+    saved.appraisal.sellerOutcomeAt=j.sellerDeclinedAt;
+    j.reviewAppraisalSnapshot=structuredClone(saved);
+  }
+
+  save();renderAll();toast("Seller declined — Sales Manager notified");
+};
+
+window.requestRevisedOffer=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+
+  j.status="Revised Offer Requested";
+  j.reviewSubmittedAt=new Date().toISOString();
+  j.alertCreatedAt=j.reviewSubmittedAt;
+  j.managerAlertAcknowledged=false;
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:j.reviewSubmittedAt,text:"Revised Offer Requested"});
+
+  const saved=getReviewSnapshot(j);
+  if(saved){saved.timeline=structuredClone(j.timeline);j.reviewAppraisalSnapshot=structuredClone(saved)}
+
+  save();renderAll();toast("Revised offer requested — Sales Manager alerted");
+};
+
+window.deleteAppraisal=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  if(!j)return;
+
+  if(getReviewSnapshot(j)||j.lastSavedAppraisalId){
+    toast("Saved appraisals are permanent and cannot be deleted");
+    return;
+  }
+
+  const hasDraft=
+    Object.values(j.appraisal?.checks||{}).some(Boolean) ||
+    Object.values(j.appraisal?.tyres||{}).some(v=>Number(v)>0) ||
+    (j.appraisal?.damageParts||[]).length ||
+    j.appraisal?.faultCodes ||
+    j.appraisal?.bodyDescription ||
+    j.appraisal?.interiorDescription ||
+    j.appraisal?.notes ||
+    j.testDrive;
+
+  if(!hasDraft){toast("There is no unsaved appraisal draft to delete");return}
+
+  if(!window.confirm(`Delete the unsaved appraisal draft for ${j.registration||"this vehicle"}? Saved appraisal records can never be deleted.`))return;
+
+  resetLiveAppraisal(j);
+  j.status=j.clockIn?"At Collection":"Appraisal Not Started";
+  j.timeline=j.timeline||[];
+  j.timeline.push({time:new Date().toISOString(),text:"Unsaved Appraisal Draft Deleted"});
+
+  save();renderAll();toast("Unsaved appraisal draft deleted");
+};
+
+window.printReviewAppraisal=id=>{
+  const j=state.collections.find(x=>x.id===id);
+  const saved=getReviewSnapshot(j);
+  if(!saved){toast("No saved appraisal available");return}
+  printSavedAppraisal(saved.id);
+};
+
+window.printAppraisal=()=>{
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("print-target"));
   $("page-appraisals").classList.add("print-target");
   window.print();
@@ -278,7 +776,10 @@ function appraisalPrintHtml(j){
       <div><span>Collection address</span><strong>${j.collectionAddress||"—"}</strong></div>
       <div><span>Destination</span><strong>${j.destination||"—"}</strong></div>
       <div><span>Vehicle mileage</span><strong>${j.vehicleMileage||"—"}</strong></div>
-      <div><span>Appraisal saved</span><strong>${dt(j.appraisalSavedAt||a.savedAt)}</strong></div>
+      <div><span>Collection start mileage</span><strong>${Number(j.startMileage||0).toLocaleString("en-GB")} miles</strong></div>
+      <div><span>Collection end mileage</span><strong>${Number(j.finishMileage||0).toLocaleString("en-GB")} miles</strong></div>
+      <div><span>Miles travelled</span><strong>${Number(j.distanceTravelled||0).toLocaleString("en-GB")} miles</strong></div>
+      <div><span>Appraisal saved</span><strong>${dt(j.savedAt||j.appraisalSavedAt||a.savedAt)}</strong></div>
     </div>
 
     <h3>Tyre tread depths</h3>
@@ -305,52 +806,71 @@ function appraisalPrintHtml(j){
 
     <h3>Additional notes</h3>
     <p>${a.notes||"No additional notes"}</p>
+
+    <h3>Test Drive</h3><table><tbody><tr><th>Started</th><td>${dt(j.testDrive?.start)}</td></tr><tr><th>Finished</th><td>${dt(j.testDrive?.end)}</td></tr><tr><th>Duration</th><td>${formatDuration(j.testDrive?.durationMinutes||0)}</td></tr><tr><th>Distance</th><td>${j.testDrive?.distance||0} miles</td></tr><tr><th>Notes</th><td>${j.testDrive?.notes||"None recorded"}</td></tr></tbody></table><h3>Journey Timeline</h3><table><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>${(j.timeline||[]).map(t=>`<tr><td>${dt(t.time)}</td><td>${t.text}</td></tr>`).join("")}</tbody></table><h3>Sales Manager Offer</h3>
+    <table>
+      <tbody>
+        <tr><th>Agreed purchase price</th><td>${money(j.agreedPrice||0)}</td></tr>
+        <tr><th>Approved offer price</th><td>${money(a.managerOfferPrice||0)}</td></tr>
+        <tr><th>Recommended reduction</th><td>${money(a.managerRecommendedReduction||0)}</td></tr>
+        <tr><th>Offer status</th><td>${a.managerOfferStatus||"Not reviewed"}</td></tr>
+        <tr><th>Manager note</th><td>${a.managerOfferNote||"No note recorded"}</td></tr>
+        <tr><th>Last updated</th><td>${dt(a.managerOfferUpdatedAt)}</td></tr>
+      </tbody>
+    </table>
   </div>`;
 }
 
 function renderAppraisalHistory(){
   const q=($("appraisalHistorySearch")?.value||"").toLowerCase();
-  const jobs=state.collections
-    .filter(j=>j.appraisalComplete)
-    .filter(j=>[j.registration,collectorName(j.collector),j.make,j.model,j.collectionAddress,j.destination].join(" ").toLowerCase().includes(q))
-    .sort((a,b)=>new Date(b.appraisalSavedAt||b.collectionDate)-new Date(a.appraisalSavedAt||a.collectionDate));
+  const records=(state.savedAppraisals||[])
+    .filter(a=>[a.registration,collectorName(a.collector),a.make,a.model,a.collectionAddress,a.destination].join(" ").toLowerCase().includes(q))
+    .sort((a,b)=>new Date(b.savedAt)-new Date(a.savedAt));
 
   if(!$("appraisalHistoryList"))return;
 
-  $("appraisalHistoryList").innerHTML=jobs.length?`<div class="table-wrap"><table>
-    <thead><tr><th>Date</th><th>Registration</th><th>Vehicle</th><th>Collector</th><th>Reduction</th><th>Saved</th><th class="no-print">Actions</th></tr></thead>
-    <tbody>${jobs.map(j=>`<tr>
-      <td>${dateOnly(j.collectionDate)}</td>
-      <td><strong>${j.registration}</strong></td>
-      <td>${j.make||""} ${j.model||""}</td>
-      <td>${collectorName(j.collector)}</td>
-      <td>${money(reduction(j))}</td>
-      <td>${dt(j.appraisalSavedAt||j.appraisal?.savedAt)}</td>
+  $("appraisalHistoryList").innerHTML=records.length?`<div class="table-wrap"><table>
+    <thead><tr><th>Saved</th><th>Registration</th><th>Vehicle</th><th>Collector</th><th>Agreed Price</th><th>Status</th><th class="no-print">Actions</th></tr></thead>
+    <tbody>${records.map(a=>`<tr>
+      <td>${dt(a.savedAt)}</td>
+      <td><strong>${a.registration||"—"}</strong></td>
+      <td>${a.make||""} ${a.model||""}</td>
+      <td>${collectorName(a.collector)}</td>
+      <td>${money(a.agreedPrice||0)}</td>
+      <td><span class="badge green">Permanent</span></td>
       <td class="no-print">
-        <button class="ghost-btn" onclick="openSavedAppraisal('${j.id}')">Open</button>
-        <button class="primary-btn" onclick="printSavedAppraisal('${j.id}')">Print</button>
+        <button class="ghost-btn" onclick="openSavedAppraisal('${a.id}')">Open</button>
+        <button class="primary-btn" onclick="printSavedAppraisal('${a.id}')">Print</button>
       </td>
     </tr>`).join("")}</tbody>
-  </table></div>`:"<p>No saved appraisals found.</p>";
+  </table></div>`:"<p>No permanently saved appraisals found.</p>";
 }
 
 if($("appraisalHistorySearch"))$("appraisalHistorySearch").oninput=renderAppraisalHistory;
 
 window.openSavedAppraisal=id=>{
+  const a=state.savedAppraisals.find(x=>x.id===id);
+  if(!a){toast("Saved appraisal not found");return}
+
   showPage("appraisals");
-  $("appraisalJobSelect").value=id;
-  renderAppraisals();
+  $("appraisalWorkspace").innerHTML=`
+    <div class="saved-record-banner">
+      <div><p class="eyebrow">PERMANENT SAVED APPRAISAL</p><h3>${a.registration} · ${a.make||""} ${a.model||""}</h3><p>Saved ${dt(a.savedAt)}. This record is read-only and cannot be deleted.</p></div>
+      <button class="primary-btn" onclick="printSavedAppraisal('${a.id}')">Print Saved Appraisal</button>
+    </div>
+    ${appraisalPrintHtml(a)}
+  `;
 };
 
 window.printSavedAppraisal=id=>{
-  const j=state.collections.find(x=>x.id===id);
-  if(!j||!j.appraisalComplete){toast("No saved appraisal found");return}
+  const a=state.savedAppraisals.find(x=>x.id===id);
+  if(!a){toast("Saved appraisal not found");return}
 
   const printWindow=window.open("","_blank");
-  printWindow.document.write(`<!DOCTYPE html><html><head><title>${j.registration} Appraisal</title>
+  printWindow.document.write(`<!DOCTYPE html><html><head><title>${a.registration} Appraisal</title>
     <link rel="stylesheet" href="style.css">
     <style>body{padding:30px;background:#fff}.saved-appraisal-print{max-width:900px;margin:auto}.saved-print-title{display:flex;justify-content:space-between;border-bottom:2px solid #172033;padding-bottom:18px;margin-bottom:20px}.print-summary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}.print-summary-grid div{border:1px solid #ddd;padding:12px;border-radius:8px}.print-summary-grid span{display:block;color:#666;font-size:12px}.print-summary-grid strong{display:block;margin-top:5px}h3{margin-top:24px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:9px;text-align:left}</style>
-  </head><body>${appraisalPrintHtml(j)}</body></html>`);
+  </head><body>${appraisalPrintHtml(a)}</body></html>`);
   printWindow.document.close();
   printWindow.focus();
   setTimeout(()=>printWindow.print(),300);

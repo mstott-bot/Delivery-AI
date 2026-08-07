@@ -1,22 +1,22 @@
-# Delivery AI DAI-009
+# Delivery AI DAI-023
 
-## No Collection reporting
-- Command Centre tile renamed to No Collection Trips
-- Tile counts rejected-vehicle trips for the current month
-- Tile shows the cost incurred on those trips
-- Dedicated No Collection Report
-- Select any reporting year
-- Monthly no-collection count
-- Monthly no-collection cost
-- Monthly miles travelled
-- Monthly hours incurred
-- Average cost per no-collection trip
-- Full yearly totals
-- Detailed list including registration, collector, reason and expense breakdown
-- Train, taxi, bus and fuel costs shown for each no-collection trip
-- Included in printable Reports output
+## Mileage Timeline Update
+- Every collection now records start mileage
+- Every collection records end mileage
+- Miles travelled remains calculated/stored
+- Saving mileage adds a permanent timeline event:
+  - Start mileage
+  - End mileage
+  - Distance travelled
+  - Date/time recorded
+- Saved review appraisals stay in sync with the mileage timeline
+- Printable saved appraisals now show:
+  - Collection start mileage
+  - Collection end mileage
+  - Miles travelled
+- Timeline remains part of the permanent printable audit trail
 
 ## Update GitHub
 git add .
-git commit -m "DAI-009 Add no collection monthly and yearly reports"
+git commit -m "DAI-023 Add collection mileage to timeline"
 git push
