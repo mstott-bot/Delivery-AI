@@ -67,6 +67,26 @@
           <div id="priorityAlerts" class="stack"></div>
         </div>
 
+        <section class="garage-guru-panel">
+          <div class="garage-guru-head">
+            <div><div class="garage-guru-title-row"><div class="gg-logo">GG</div><div><p class="eyebrow">POWERED BY AI</p><h3>✨ Ask Garage Guru</h3></div></div><p class="garage-guru-subtitle">Ask a question about your live Delivery AI data in plain English.</p></div>
+            <button type="button" class="garage-guru-clear" onclick="clearGarageGuru()">↻ Clear chat</button>
+          </div>
+          <div class="garage-guru-search"><input id="garageGuruQuestion" autocomplete="off" placeholder="Ask Garage Guru anything about collections, costs, mileage or performance..."><button type="button" class="garage-guru-ask" onclick="askGarageGuru()">➤ Ask Garage Guru</button></div>
+          <div class="garage-guru-suggestions"><span>SUGGESTED QUESTIONS</span><div class="garage-guru-pills">
+            <button type="button" onclick="garageGuruSuggestion('How many cars have we collected this month?')">How many cars collected this month?</button>
+            <button type="button" onclick="garageGuruSuggestion('Who collected the most cars this month?')">Who collected the most cars?</button>
+            <button type="button" onclick="garageGuruSuggestion('What are our travel costs this month?')">Travel costs this month?</button>
+            <button type="button" onclick="garageGuruSuggestion('How much money have we saved in reductions this month?')">Money saved in reductions?</button>
+            <button type="button" onclick="garageGuruSuggestion('How many No Collections have we had this month?')">No Collections this month?</button>
+            <button type="button" onclick="garageGuruSuggestion('How many vehicle miles have we driven this month?')">Vehicle miles this month?</button>
+            <button type="button" onclick="garageGuruSuggestion('Who achieved the most reductions this month?')">Best reduction collector?</button>
+            <button type="button" onclick="garageGuruSuggestion('How many appraisals are awaiting Sales Manager review?')">Awaiting manager review?</button>
+          </div></div>
+          <div class="garage-guru-answer" id="garageGuruAnswer"><div class="gg-answer-icon">GG</div><div class="gg-answer-content"><span>Garage Guru</span><p>Ask me about your live Delivery AI performance and I’ll analyse the data currently held in the app.</p></div></div>
+          <div class="garage-guru-info">ⓘ Garage Guru uses your live Delivery AI data to answer operational questions.</div>
+        </section>
+
         <div class="metric-grid" id="commandMetrics"></div>
 
         <div class="content-grid two">
@@ -113,7 +133,7 @@
               <p class="eyebrow">CREATE</p>
               <h3>New Collection</h3>
             </div>
-            <span class="badge blue">DAI-025</span>
+            <span class="badge blue">DAI-026</span>
           </div>
 
           <div class="form-section">

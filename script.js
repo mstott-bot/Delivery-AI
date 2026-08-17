@@ -213,6 +213,30 @@ function metric(label,value,sub,cls="blue"){
   return `<div class="metric-card ${cls}"><span class="metric-label">${label}</span><strong>${value}</strong><small>${sub||""}</small></div>`
 }
 
+
+function deliveryGuruMonthJobs(date=new Date()){const key=monthKey(date);return state.collections.filter(j=>monthKey(j.collectionDate||j.createdAt)===key)}
+function deliveryGuruCollectorStats(jobs){return state.collectors.map(c=>{const cj=jobs.filter(j=>j.collector===c.id);return{name:c.name,delivered:cj.filter(j=>j.status==="Delivered").length,reductionTotal:cj.reduce((s,j)=>s+reduction(j),0),vehicleMiles:cj.reduce((s,j)=>s+Number(j.vehicleJourney?.distance||0),0),hours:cj.reduce((s,j)=>s+hoursWorked(j),0)}})}
+function garageGuruAnswerHtml(title,main,detail=""){return `<div class="gg-answer-icon">GG</div><div class="gg-answer-content"><span>${title}</span><p class="gg-answer-main">${main}</p>${detail?`<p class="gg-answer-detail">${detail}</p>`:""}</div>`}
+function garageGuruInterpret(question){
+ const q=(question||"").trim().toLowerCase(),jobs=deliveryGuruMonthJobs(),delivered=jobs.filter(j=>j.status==="Delivered"),noCollections=jobs.filter(j=>j.status==="No Collection"),stats=deliveryGuruCollectorStats(jobs);
+ const totalCost=jobs.reduce((s,j)=>s+totalExpenses(j),0),totalReduction=jobs.reduce((s,j)=>s+reduction(j),0),vehicleMiles=jobs.reduce((s,j)=>s+Number(j.vehicleJourney?.distance||0),0),totalHours=jobs.reduce((s,j)=>s+hoursWorked(j),0),awaiting=state.collections.filter(j=>["Awaiting Sales Manager Review","Revised Offer Requested","Seller Declined"].includes(j.status));
+ if(!q)return garageGuruAnswerHtml("Garage Guru","Type a question or choose one of the suggested questions.");
+ if((q.includes("how many")||q.includes("number"))&&(q.includes("car")||q.includes("collection"))&&!q.includes("no collection"))return garageGuruAnswerHtml("Collections this month",`${delivered.length} vehicle${delivered.length===1?" has":"s have"} been delivered this month.`,`${jobs.length} collection records exist for the month including active and No Collection trips.`);
+ if(q.includes("most cars")||q.includes("most collection")){const top=[...stats].sort((a,b)=>b.delivered-a.delivered)[0];return top&&top.delivered?garageGuruAnswerHtml("Top collector",`${top.name} has completed the most collections this month with ${top.delivered}.`,`They have driven ${num(top.vehicleMiles,0)} vehicle miles and logged ${num(top.hours)} hours.`):garageGuruAnswerHtml("Collector performance","No completed collections are recorded this month yet.")}
+ if(q.includes("travel cost")||q.includes("expenses")||q.includes("travel spend")){const saved=jobs.filter(j=>j.expensesSaved).length,train=jobs.reduce((s,j)=>s+Number(j.expenses?.train||0),0),taxi=jobs.reduce((s,j)=>s+Number(j.expenses?.taxi||0),0),bus=jobs.reduce((s,j)=>s+Number(j.expenses?.bus||0),0),fuel=jobs.reduce((s,j)=>s+Number(j.expenses?.fuel||0),0);return garageGuruAnswerHtml("Travel costs this month",`${money(totalCost)} has been recorded in travel costs this month.`,`${saved} expense records saved. Train ${money(train)}, taxi ${money(taxi)}, bus ${money(bus)}, fuel ${money(fuel)}.`)}
+ if((q.includes("money saved")||q.includes("reduction"))&&!q.includes("who")&&!q.includes("most")){const avg=delivered.length?totalReduction/delivered.length:0;return garageGuruAnswerHtml("Reduction performance",`${money(totalReduction)} has been saved in vehicle reductions this month.`,delivered.length?`That averages ${money(avg)} per delivered vehicle.`:"No delivered vehicles are available for an average yet.")}
+ if(q.includes("no collection")||q.includes("rejected vehicle")){const cost=noCollections.reduce((s,j)=>s+totalExpenses(j),0);return garageGuruAnswerHtml("No Collection trips",`${noCollections.length} No Collection trip${noCollections.length===1?" has":"s have"} been recorded this month.`,`Those trips have incurred ${money(cost)} in costs.`)}
+ if(q.includes("vehicle miles")||q.includes("miles driven")||q.includes("mileage"))return garageGuruAnswerHtml("Vehicle mileage this month",`${num(vehicleMiles,0)} vehicle miles have been recorded this month.`,delivered.length?`That is an average of ${num(vehicleMiles/delivered.length,0)} miles per delivered vehicle.`:"No delivered vehicles are available for an average yet.");
+ if((q.includes("who")||q.includes("collector"))&&(q.includes("reduction")||q.includes("saved"))){const top=[...stats].sort((a,b)=>b.reductionTotal-a.reductionTotal)[0];return top&&top.reductionTotal?garageGuruAnswerHtml("Reduction leader",`${top.name} has achieved the highest total reduction this month at ${money(top.reductionTotal)}.`,`${top.delivered} delivered vehicles are recorded for ${top.name}.`):garageGuruAnswerHtml("Reduction league","No collector reductions have been recorded this month yet.")}
+ if(q.includes("awaiting")&&(q.includes("manager")||q.includes("review")||q.includes("approval")))return garageGuruAnswerHtml("Sales Manager actions",`${awaiting.length} collection${awaiting.length===1?" is":"s are"} currently waiting for Sales Manager action.`,awaiting.length?awaiting.slice(0,4).map(j=>`${j.registration} — ${j.status}`).join(" · "):"There are no appraisal decisions waiting.");
+ if(q.includes("hours")||q.includes("worked"))return garageGuruAnswerHtml("Collector hours",`${num(totalHours)} collector hours are recorded this month.`,delivered.length?`${num(totalHours/delivered.length)} hours per delivered vehicle on average.`:"No delivered vehicles are available for an average yet.");
+ if(q.includes("net saving")||q.includes("net"))return garageGuruAnswerHtml("Net collection saving",`Net saving is ${money(totalReduction-totalCost)} this month.`,`${money(totalReduction)} reductions less ${money(totalCost)} travel costs.`);
+ return garageGuruAnswerHtml("Garage Guru","I can answer questions about collections, collectors, travel costs, reductions, No Collections, vehicle mileage, hours and Sales Manager reviews.","Try one of the suggested questions above. When OpenAI is connected, this same panel can answer broader natural-language questions.")
+}
+window.garageGuruSuggestion=q=>{const input=$("garageGuruQuestion");if(input){input.value=q;input.focus()}};
+window.askGarageGuru=()=>{const input=$("garageGuruQuestion"),answer=$("garageGuruAnswer");if(!input||!answer)return;answer.innerHTML=garageGuruAnswerHtml("Garage Guru","Analysing your live Delivery AI data...");setTimeout(()=>answer.innerHTML=garageGuruInterpret(input.value),150)};
+window.clearGarageGuru=()=>{if($("garageGuruQuestion"))$("garageGuruQuestion").value="";if($("garageGuruAnswer"))$("garageGuruAnswer").innerHTML=garageGuruAnswerHtml("Garage Guru","Ask me about your live Delivery AI performance and I’ll analyse the data currently held in the app.")};
+
 function renderCommand(){
   const now=new Date(), mk=monthKey(now), today=now.toISOString().slice(0,10);
   const month=state.collections.filter(j=>monthKey(j.collectionDate||j.createdAt)===mk);
@@ -1536,3 +1560,5 @@ window.deleteCollector=id=>{if(state.collections.some(j=>j.collector===id)){toas
 
 $("todayDate").textContent=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
 renderAll();
+
+$("garageGuruQuestion")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();askGarageGuru()}});
